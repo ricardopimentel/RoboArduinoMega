@@ -70,6 +70,7 @@ bool animacaoComendo = false;
 bool animacaoBrincando = false;
 bool animacaoCurando = false;
 bool animacaoSusto = false;
+bool animacaoAcariciado = false;
 unsigned long tempoInicioReacao = 0;
 unsigned long tempoInicioSusto = 0;
 const unsigned long DURACAO_SUSTO = 2000; // O susto dura 2s
@@ -87,6 +88,13 @@ unsigned long tempoProximoEspirro = 10000;
 byte uidComida[4] = {0, 0, 0, 0};
 byte uidBrincar[4] = {0, 0, 0, 0};
 byte uidSaude[4] = {0, 0, 0, 0};
+byte uidPet[4] = {0, 0, 0, 0};
+
+// Estado do gatinho mini
+bool petTagPresente = false;
+float catMiniX = 105.0;
+bool catMiniDirRight = true;
+unsigned long tempoUltimoPasso = 0;
 
 const int MPU_ADDR = 0x68; 
 int16_t ax, ay, az; 
@@ -174,6 +182,7 @@ const int EEPROM_ADDR_UID_COMIDA = 4;
 const int EEPROM_ADDR_UID_BRINCAR = 8;
 const int EEPROM_ADDR_UID_SAUDE = 12;
 const int EEPROM_ADDR_DOENTE = 16;
+const int EEPROM_ADDR_UID_PET = 17;
 
 void salvarEstado() {
   EEPROM.update(EEPROM_ADDR_MAGIC, EEPROM_MAGIC_BYTE);
@@ -186,6 +195,7 @@ void salvarEstado() {
     EEPROM.update(EEPROM_ADDR_UID_COMIDA + i, uidComida[i]);
     EEPROM.update(EEPROM_ADDR_UID_BRINCAR + i, uidBrincar[i]);
     EEPROM.update(EEPROM_ADDR_UID_SAUDE + i, uidSaude[i]);
+    EEPROM.update(EEPROM_ADDR_UID_PET + i, uidPet[i]);
   }
 }
 
@@ -201,6 +211,7 @@ void carregarEstado() {
       uidComida[i] = EEPROM.read(EEPROM_ADDR_UID_COMIDA + i);
       uidBrincar[i] = EEPROM.read(EEPROM_ADDR_UID_BRINCAR + i);
       uidSaude[i] = EEPROM.read(EEPROM_ADDR_UID_SAUDE + i);
+      uidPet[i] = EEPROM.read(EEPROM_ADDR_UID_PET + i);
     }
     Serial.println(F("Estado carregado da EEPROM com sucesso!"));
   } else {
@@ -268,6 +279,22 @@ void curarPet() {
   tone(buzzerPin, 1109, 150);
   
   salvarEstado(); // Grava alteração de atributos na EEPROM
+}
+
+void acariciarPet() {
+  animacaoComendo = false;
+  animacaoBrincando = false;
+  animacaoCurando = false;
+  animacaoAcariciado = true;
+  tempoInicioReacao = millis();
+  telaAtual = TELA_FACE;
+  
+  // Melodia do Buzzer: miado feliz ou carinho
+  tone(buzzerPin, 659, 100); delay(120);
+  tone(buzzerPin, 784, 100); delay(120);
+  tone(buzzerPin, 988, 150);
+  
+  salvarEstado(); // Grava alteração na EEPROM
 }
 
 // Função auxiliar para desenhar o olho de forma segura (previne crashes do u8g2.drawRBox e renderiza linha na piscada)
@@ -540,6 +567,10 @@ void loop() {
     else if (!eUIDZerado(uidSaude) && comparaUID(cardUID, uidSaude)) {
       curarPet();
     }
+    else if (!eUIDZerado(uidPet) && comparaUID(cardUID, uidPet)) {
+      acariciarPet();
+      petTagPresente = true;
+    }
     else {
       // Aprende o cartão na ordem
       if (eUIDZerado(uidComida)) {
@@ -561,9 +592,44 @@ void loop() {
           curarPet();
         }
       }
+      else if (eUIDZerado(uidPet)) {
+        if (!comparaUID(cardUID, uidComida) && !comparaUID(cardUID, uidBrincar) && !comparaUID(cardUID, uidSaude)) {
+          copiaUID(uidPet, cardUID);
+          Serial.println(F("-> Cartao registrado para PET!"));
+          acariciarPet();
+          petTagPresente = true;
+        }
+      }
     }
     
     rfid.PICC_HaltA(); // Pausa leitura para evitar repetição
+  }
+
+  // Verificar se o cartão do pet ainda está no leitor
+  static unsigned long tempoUltimaVerificacaoPet = 0;
+  if (petTagPresente && (millis() - tempoUltimaVerificacaoPet >= 500)) {
+    tempoUltimaVerificacaoPet = millis();
+    
+    byte bufferATQA[2];
+    byte bufferSize = sizeof(bufferATQA);
+    
+    // Acorda o cartão caso ele esteja no campo (mesmo em Halt)
+    MFRC522::StatusCode status = rfid.PICC_WakeupA(bufferATQA, &bufferSize);
+    
+    bool aindaPresente = false;
+    if (status == MFRC522::STATUS_OK) {
+      if (rfid.PICC_ReadCardSerial()) {
+        if (comparaUID(rfid.uid.uidByte, uidPet)) {
+          aindaPresente = true;
+        }
+        rfid.PICC_HaltA(); // Deixa em Halt novamente
+      }
+    }
+    
+    if (!aindaPresente) {
+      petTagPresente = false;
+      Serial.println(F("Etiqueta do Pet removida!"));
+    }
   }
 
   // Desativa reações após o tempo estipulado
@@ -573,11 +639,12 @@ void loop() {
   if (animacaoEspirro && (millis() - tempoInicioEspirro >= 1500)) {
     animacaoEspirro = false;
   }
-  if ((animacaoComendo || animacaoBrincando || animacaoCurando) && 
+  if ((animacaoComendo || animacaoBrincando || animacaoCurando || animacaoAcariciado) && 
       (millis() - tempoInicioReacao >= DURACAO_REACAO)) {
     animacaoComendo = false;
     animacaoBrincando = false;
     animacaoCurando = false;
+    animacaoAcariciado = false;
   }
 
   // --- 4. LEITURA DOS SENSORES ---
@@ -1219,6 +1286,47 @@ void loop() {
         u8g2.drawStr(64 + offsetStr, 38 - (subida % 25), "+");
         u8g2.drawStr(64 - offsetStr, 32 - ((subida + 12) % 25), "+");
       }
+      else if (animacaoAcariciado) {
+        // Gatinho sendo acariciado (olhos fechados felizes, orelhas, mão acariciando)
+        // Cabeça do gatinho no centro
+        u8g2.drawRFrame(44, 30, 40, 26, 8); // cabeça
+        
+        // Orelhas
+        u8g2.drawTriangle(44, 30, 52, 30, 40, 18); // orelha esquerda
+        u8g2.drawTriangle(84, 30, 76, 30, 88, 18); // orelha direita
+        
+        // Olhos fechados de felicidade ( ^ ^ )
+        u8g2.drawLine(50, 42, 54, 39);
+        u8g2.drawLine(54, 39, 58, 42);
+        
+        u8g2.drawLine(70, 42, 74, 39);
+        u8g2.drawLine(74, 39, 78, 42);
+        
+        // Nariz e boca (w)
+        u8g2.drawPixel(64, 44);
+        u8g2.drawLine(61, 46, 64, 48);
+        u8g2.drawLine(64, 48, 67, 46);
+        
+        // Bigodes
+        u8g2.drawLine(36, 43, 42, 44);
+        u8g2.drawLine(35, 47, 42, 46);
+        u8g2.drawLine(86, 44, 92, 43);
+        u8g2.drawLine(86, 46, 93, 47);
+        
+        // Mão fazendo carinho (um arco se movendo para a esquerda e direita sobre a cabeça)
+        int maoOffset = (int)(sin(millis() * 0.006) * 12.0);
+        int maoX = 64 + maoOffset;
+        int maoY = 16;
+        u8g2.drawCircle(maoX, maoY, 6, U8G2_DRAW_UPPER); // semicírculo representando a mão
+        u8g2.drawLine(maoX - 6, maoY, maoX - 10, maoY - 2); // punho/braço
+        
+        // Corações flutuando
+        int subidaCarinho = (millis() - tempoInicioReacao) / 40;
+        int offsetStrCarinho = (int)(sin(millis() * 0.015) * 8.0);
+        drawHeart(64 + offsetStrCarinho, 25 - (subidaCarinho % 20));
+        drawHeart(40 - offsetStrCarinho, 30 - ((subidaCarinho + 8) % 20));
+        drawHeart(88 + offsetStrCarinho, 35 - ((subidaCarinho + 14) % 20));
+      }
       else if (variacaoMovimento > 8000) {
         // TONTO: Desenha dois "X" giratórios
         float dx1 = 8.0 * cos(anguloTontura);
@@ -1384,9 +1492,79 @@ void loop() {
           }
         }
       }
+      
+      // Desenha o gatinho mini no canto inferior da tela se a etiqueta estiver presente
+      if (petTagPresente && !animacaoAcariciado) {
+        if (luzPorcento < 15) {
+          // Gatinho dormindo
+          u8g2.drawDisc(112, 58, 4);
+          u8g2.drawPixel(107, 57); // orelha 1
+          u8g2.drawPixel(109, 55); // orelha 2
+          
+          // Letrinhas zZz subindo
+          int zOffset = (millis() / 400) % 3;
+          u8g2.setFont(u8g2_font_profont11_tr);
+          if (zOffset == 0) u8g2.drawStr(118, 54, "z");
+          else if (zOffset == 1) u8g2.drawStr(120, 50, "z");
+          else if (zOffset == 2) u8g2.drawStr(122, 46, "Z");
+        } else {
+          // Gatinho andando
+          if (millis() - tempoUltimoPasso >= 150) {
+            tempoUltimoPasso = millis();
+            if (catMiniDirRight) {
+              catMiniX += 1.0;
+              if (catMiniX >= 118.0) catMiniDirRight = false;
+            } else {
+              catMiniX -= 1.0;
+              if (catMiniX <= 96.0) catMiniDirRight = true;
+            }
+          }
+          
+          int cx = (int)catMiniX;
+          int cy = 54;
+          u8g2.setFont(u8g2_font_profont11_tr);
+          if (catMiniDirRight) {
+            // Corpo
+            u8g2.drawBox(cx, cy, 8, 5);
+            // Cabeça
+            u8g2.drawBox(cx + 6, cy - 2, 4, 4);
+            // Orelhas
+            u8g2.drawPixel(cx + 7, cy - 3);
+            u8g2.drawPixel(cx + 9, cy - 3);
+            // Rabo
+            u8g2.drawLine(cx, cy, cx - 2, cy - 2);
+            // Pernas
+            if (((millis() / 150) % 2) == 0) {
+              u8g2.drawLine(cx + 1, cy + 5, cx + 1, cy + 7);
+              u8g2.drawLine(cx + 6, cy + 5, cx + 6, cy + 7);
+            } else {
+              u8g2.drawLine(cx + 2, cy + 5, cx + 2, cy + 7);
+              u8g2.drawLine(cx + 5, cy + 5, cx + 5, cy + 7);
+            }
+          } else {
+            // Corpo
+            u8g2.drawBox(cx + 2, cy, 8, 5);
+            // Cabeça
+            u8g2.drawBox(cx, cy - 2, 4, 4);
+            // Orelhas
+            u8g2.drawPixel(cx, cy - 3);
+            u8g2.drawPixel(cx + 2, cy - 3);
+            // Rabo
+            u8g2.drawLine(cx + 9, cy, cx + 11, cy - 2);
+            // Pernas
+            if (((millis() / 150) % 2) == 0) {
+              u8g2.drawLine(cx + 3, cy + 5, cx + 3, cy + 7);
+              u8g2.drawLine(cx + 8, cy + 5, cx + 8, cy + 7);
+            } else {
+              u8g2.drawLine(cx + 4, cy + 5, cx + 4, cy + 7);
+              u8g2.drawLine(cx + 7, cy + 5, cx + 7, cy + 7);
+            }
+          }
+        }
+      }
     }
   } while ( u8g2.nextPage() );
 
   // Ajustado o delay para manter as transições fluidas (~30 FPS)
   delay(35); 
-}
+}
