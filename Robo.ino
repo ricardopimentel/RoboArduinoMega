@@ -16,6 +16,9 @@ const unsigned long INTERVALO_ALERTA = 60000; // Buzzer apita a cada 10 segundos
 const int TEMPO_TELA_INFO = 4000;             // Tempo de permanência de cada tela de status (4s)
 const unsigned long DURACAO_REACAO = 6000;    // Duração das animações de reação (comer, brincar, curar)
 
+// --- CONFIGURAÇÃO DO TEMPO DE INCUBAÇÃO DO OVO ---
+const unsigned int TEMPO_INCUBACAO_SEGUNDOS = 15; // Tempo para o ovo chocar em segundos (padrão: 900 para 15 minutos)
+
 // --- CONFIGURAÇÃO DE LÓGICA DO SENSOR DE SOM ---
 // Defina como true se o sensor envia nível LOW quando detecta barulho (Padrão LM393/KY-038)
 // Defina como false se o sensor envia nível HIGH quando detecta barulho
@@ -96,6 +99,25 @@ float catMiniX = 105.0;
 bool catMiniDirRight = true;
 unsigned long tempoUltimoPasso = 0;
 
+// --- SISTEMA DE NASCIMENTO E PERSONALIDADES ---
+enum EstadoNascimento {
+  ESTADO_OVO = 0,
+  ESTADO_CHOCANDO = 1,
+  ESTADO_NASCIDO = 2
+};
+EstadoNascimento estadoNascimento = ESTADO_OVO;
+unsigned int segundosChocados = 0;
+unsigned long tempoUltimoSegundoChocado = 0;
+
+enum Personalidade {
+  PERSONALIDADE_BASICA = 0,
+  PERSONALIDADE_SARCASTICA = 1,
+  PERSONALIDADE_SENSIVEL = 2
+};
+Personalidade personalidade = PERSONALIDADE_SARCASTICA; // Sempre começa como sarcástica
+int pontosDeVinculo = 0;
+unsigned long tempoUltimaVerificacaoVinculo = 0;
+
 const int MPU_ADDR = 0x68; 
 int16_t ax, ay, az; 
 int16_t ax_ant, ay_ant, az_ant; 
@@ -172,8 +194,23 @@ void copiaUID(byte* dest, byte* src) {
   }
 }
 
+void mostrarMensagemRegistro(const char* tipo) {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_profont11_tr);
+    u8g2.drawStr(12, 18, "NOVO CARTAO!");
+    u8g2.drawStr(12, 33, "REGISTRADO COMO:");
+    u8g2.setFont(u8g2_font_profont12_tf);
+    u8g2.drawStr(12, 52, tipo);
+  } while ( u8g2.nextPage() );
+  
+  // Toca um bipe duplo alegre de confirmação
+  tone(buzzerPin, 880, 80); delay(120);
+  tone(buzzerPin, 1047, 180); delay(2000); // 2 segundos para o usuário ler a mensagem
+}
+
 // --- CONFIGURAÇÃO DE EEPROM PARA PERSISTÊNCIA ---
-const byte EEPROM_MAGIC_BYTE = 0xA5;
+const byte EEPROM_MAGIC_BYTE = 0xA8; // Alterado para 0xA8 para forçar reset com a nova lógica de vínculo
 const int EEPROM_ADDR_MAGIC = 0;
 const int EEPROM_ADDR_FOME = 1;
 const int EEPROM_ADDR_BRINCAR = 2;
@@ -183,6 +220,11 @@ const int EEPROM_ADDR_UID_BRINCAR = 8;
 const int EEPROM_ADDR_UID_SAUDE = 12;
 const int EEPROM_ADDR_DOENTE = 16;
 const int EEPROM_ADDR_UID_PET = 17;
+const int EEPROM_ADDR_ESTADO_NASCIMENTO = 21;
+const int EEPROM_ADDR_SEGUNDOS_CHOCADOS_MSB = 22;
+const int EEPROM_ADDR_SEGUNDOS_CHOCADOS_LSB = 23;
+const int EEPROM_ADDR_PERSONALIDADE = 24;
+const int EEPROM_ADDR_PONTOS_DE_VINCULO = 25;
 
 void salvarEstado() {
   EEPROM.update(EEPROM_ADDR_MAGIC, EEPROM_MAGIC_BYTE);
@@ -197,6 +239,12 @@ void salvarEstado() {
     EEPROM.update(EEPROM_ADDR_UID_SAUDE + i, uidSaude[i]);
     EEPROM.update(EEPROM_ADDR_UID_PET + i, uidPet[i]);
   }
+  
+  EEPROM.update(EEPROM_ADDR_ESTADO_NASCIMENTO, (byte)estadoNascimento);
+  EEPROM.update(EEPROM_ADDR_SEGUNDOS_CHOCADOS_MSB, (byte)(segundosChocados >> 8));
+  EEPROM.update(EEPROM_ADDR_SEGUNDOS_CHOCADOS_LSB, (byte)(segundosChocados & 0xFF));
+  EEPROM.update(EEPROM_ADDR_PERSONALIDADE, (byte)personalidade);
+  EEPROM.update(EEPROM_ADDR_PONTOS_DE_VINCULO, (byte)pontosDeVinculo);
 }
 
 void carregarEstado() {
@@ -213,18 +261,287 @@ void carregarEstado() {
       uidSaude[i] = EEPROM.read(EEPROM_ADDR_UID_SAUDE + i);
       uidPet[i] = EEPROM.read(EEPROM_ADDR_UID_PET + i);
     }
+    
+    estadoNascimento = (EstadoNascimento)EEPROM.read(EEPROM_ADDR_ESTADO_NASCIMENTO);
+    segundosChocados = (EEPROM.read(EEPROM_ADDR_SEGUNDOS_CHOCADOS_MSB) << 8) | EEPROM.read(EEPROM_ADDR_SEGUNDOS_CHOCADOS_LSB);
+    personalidade = (Personalidade)EEPROM.read(EEPROM_ADDR_PERSONALIDADE);
+    pontosDeVinculo = EEPROM.read(EEPROM_ADDR_PONTOS_DE_VINCULO);
+    
     Serial.println(F("Estado carregado da EEPROM com sucesso!"));
+    Serial.print(F("Estado Nascimento: "));
+    Serial.println(estadoNascimento);
+    Serial.print(F("Segundos Chocados: "));
+    Serial.println(segundosChocados);
+    Serial.print(F("Pontos de Vinculo: "));
+    Serial.println(pontosDeVinculo);
+    Serial.print(F("Personalidade do Pet: "));
+    if (personalidade == PERSONALIDADE_BASICA) Serial.println(F("BASICA"));
+    else if (personalidade == PERSONALIDADE_SARCASTICA) Serial.println(F("SARCASTICA"));
+    else if (personalidade == PERSONALIDADE_SENSIVEL) Serial.println(F("SENSIVEL"));
   } else {
-    Serial.println(F("EEPROM vazia. Inicializando valores padrao..."));
+    Serial.println(F("EEPROM vazia ou antiga. Inicializando valores padrao de nascimento (OVO)..."));
     estaDoente = false;
-    // Usa os valores padrão e já grava na EEPROM
+    fome = 80;
+    diversao = 75;
+    saude = 90;
+    for (int i = 0; i < 4; i++) {
+      uidComida[i] = 0;
+      uidBrincar[i] = 0;
+      uidSaude[i] = 0;
+      uidPet[i] = 0;
+    }
+    estadoNascimento = ESTADO_OVO;
+    segundosChocados = 0;
+    personalidade = PERSONALIDADE_SARCASTICA;
+    pontosDeVinculo = 0;
     salvarEstado();
+  }
+}
+
+// --- SISTEMA DE INCUBACAÇÃO DO OVO ---
+
+void drawEgg(int x, int y, int crackStage, int wobbleOffset) {
+  u8g2.setDrawColor(1);
+  u8g2.drawFilledEllipse(x + wobbleOffset, y + 8, 16, 14); // base
+  u8g2.drawFilledEllipse(x + wobbleOffset, y - 2, 12, 12); // topo
+  
+  if (crackStage >= 1) {
+    u8g2.setDrawColor(0);
+    // Rachadura no topo
+    u8g2.drawLine(x + wobbleOffset - 2, y - 6, x + wobbleOffset + 2, y - 4);
+    u8g2.drawLine(x + wobbleOffset + 2, y - 4, x + wobbleOffset - 1, y - 1);
+    u8g2.drawLine(x + wobbleOffset - 1, y - 1, x + wobbleOffset + 3, y + 3);
+  }
+  if (crackStage >= 2) {
+    // Estende a rachadura e adiciona uma ramificação esquerda
+    u8g2.drawLine(x + wobbleOffset + 3, y + 3, x + wobbleOffset - 3, y + 7);
+    u8g2.drawLine(x + wobbleOffset - 3, y + 7, x + wobbleOffset + 1, y + 11);
+    
+    u8g2.drawLine(x + wobbleOffset - 1, y - 1, x + wobbleOffset - 7, y + 1);
+    u8g2.drawLine(x + wobbleOffset - 7, y + 1, x + wobbleOffset - 5, y + 5);
+  }
+  if (crackStage >= 3) {
+    // Ramificação direita e outra na base
+    u8g2.drawLine(x + wobbleOffset + 2, y - 4, x + wobbleOffset + 8, y - 2);
+    u8g2.drawLine(x + wobbleOffset + 8, y - 2, x + wobbleOffset + 6, y + 2);
+    
+    u8g2.drawLine(x + wobbleOffset - 3, y + 7, x + wobbleOffset - 10, y + 8);
+    u8g2.drawLine(x + wobbleOffset + 1, y + 11, x + wobbleOffset - 2, y + 15);
+  }
+  u8g2.setDrawColor(1); // restaura cor padrão
+}
+
+void nascerPet() {
+  estadoNascimento = ESTADO_NASCIDO;
+  
+  // O pet sempre começa com a personalidade sarcástica no nascimento
+  personalidade = PERSONALIDADE_SARCASTICA;
+  pontosDeVinculo = 0;
+  tempoUltimaVerificacaoVinculo = millis();
+  
+  // Reseta os atributos do bichinho para o nascimento
+  fome = 80;
+  diversao = 75;
+  saude = 90;
+  estaDoente = false;
+  
+  salvarEstado();
+
+  // Imprime no Serial Monitor qual personalidade nasceu
+  Serial.println(F("=== O PET NASCEU! ==="));
+  Serial.println(F("Personalidade Inicial: SARCASTICA"));
+  Serial.println(F("Trate-o bem para evoluir o vínculo!"));
+
+  // Desenha uma mensagem de nascimento na tela por 4 segundos
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_profont11_tr);
+    u8g2.drawStr(12, 16, "O PET NASCEU!");
+    u8g2.drawStr(12, 28, "O OVO RACHOU!");
+    u8g2.drawStr(12, 44, "PERSONALIDADE:");
+    u8g2.setFont(u8g2_font_profont12_tf);
+    u8g2.drawStr(12, 58, "SARCASTICA");
+  } while (u8g2.nextPage());
+
+  // Melodia alegre especial de nascimento (Fanfarra)
+  tone(buzzerPin, 523, 100); delay(120);
+  tone(buzzerPin, 659, 100); delay(120);
+  tone(buzzerPin, 784, 100); delay(120);
+  tone(buzzerPin, 1047, 300); delay(350);
+  tone(buzzerPin, 784, 100); delay(120);
+  tone(buzzerPin, 1047, 400);
+  
+  delay(4000); // 4 segundos para o usuário ler a personalidade na tela
+}
+
+void processarFluxoIncubacao() {
+  // Lógica de contagem de tempo para o estado de chocar
+  if (estadoNascimento == ESTADO_CHOCANDO) {
+    if (tempoUltimoSegundoChocado == 0) {
+      tempoUltimoSegundoChocado = millis();
+    }
+    
+    if (millis() - tempoUltimoSegundoChocado >= 1000) {
+      segundosChocados++;
+      tempoUltimoSegundoChocado = millis();
+      
+      // Salva progresso na EEPROM a cada 10 segundos para persistir após desligamento
+      if (segundosChocados % 10 == 0) {
+        salvarEstado();
+      }
+      
+      // Ao atingir o tempo limite configurado, o pet nasce
+      if (segundosChocados >= TEMPO_INCUBACAO_SEGUNDOS) {
+        nascerPet();
+        return; // Sai do fluxo de incubação já que nasceu
+      }
+    }
+  }
+
+  // Leitura do RFID para chocar o ovo
+  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+    if (estadoNascimento == ESTADO_OVO) {
+      estadoNascimento = ESTADO_CHOCANDO;
+      segundosChocados = 0;
+      tempoUltimoSegundoChocado = millis();
+      salvarEstado();
+      
+      // Toque melódico alegre para início da incubação
+      tone(buzzerPin, 523, 100); delay(120);
+      tone(buzzerPin, 659, 100); delay(120);
+      tone(buzzerPin, 784, 250);
+    }
+    rfid.PICC_HaltA();
+  }
+
+  // Renderização de tela do Ovo
+  u8g2.firstPage();
+  do {
+    if (estadoNascimento == ESTADO_OVO) {
+      // Ovo intacto respirando sutilmente
+      int pulso = (int)(sin(millis() * 0.003) * 1.5);
+      drawEgg(64, 20, 0, pulso);
+      
+      u8g2.setFont(u8g2_font_profont11_tr);
+      u8g2.drawStr(24, 48, "OVO MISTERIOSO");
+      
+      // Texto piscando "APROXIME TAG NFC" no rodapé
+      if ((millis() / 500) % 2 == 0) {
+        u8g2.drawStr(18, 62, "APROXIME TAG NFC");
+      }
+    } 
+    else if (estadoNascimento == ESTADO_CHOCANDO) {
+      // Determina estágio de rachadura de forma proporcional ao tempo total
+      int stage = 1;
+      if (segundosChocados >= (TEMPO_INCUBACAO_SEGUNDOS * 2) / 3) stage = 3;      // Último terço do tempo
+      else if (segundosChocados >= TEMPO_INCUBACAO_SEGUNDOS / 3) stage = 2; // Segundo terço do tempo
+      
+      // Tremores físicos no ovo
+      int wobble = 0;
+      if (stage == 3) {
+        if (random(0, 10) < 4) wobble = random(-2, 3); // tremor forte
+      } else if (stage == 2) {
+        if (random(0, 15) < 2) wobble = random(-1, 2); // tremor leve
+      }
+      
+      drawEgg(64, 18, stage, wobble);
+      
+      u8g2.setFont(u8g2_font_profont11_tr);
+      u8g2.drawStr(34, 44, "CHOCANDO...");
+      
+      // Barra de progresso (de X=24 a X=104, Y=48)
+      u8g2.drawFrame(24, 48, 80, 5);
+      int progressWidth = map(segundosChocados, 0, TEMPO_INCUBACAO_SEGUNDOS, 0, 76);
+      if (progressWidth > 76) progressWidth = 76;
+      u8g2.drawBox(26, 50, progressWidth, 1);
+      
+      // Tempo restante (MM:SS)
+      unsigned int tempoRestante = TEMPO_INCUBACAO_SEGUNDOS - segundosChocados;
+      unsigned int minRestantes = tempoRestante / 60;
+      unsigned int segRestantes = tempoRestante % 60;
+      char tempoStr[10];
+      sprintf(tempoStr, "%02d:%02d", minRestantes, segRestantes);
+      u8g2.drawStr(48, 61, tempoStr);
+    }
+  } while (u8g2.nextPage());
+  
+  delay(35);
+}
+
+// --- CONTROLE DE EVOLUÇÃO E VÍNCULO DO PET ---
+void atualizarVinculo(int alteracao) {
+  int antigoVinculo = pontosDeVinculo;
+  pontosDeVinculo = constrain(pontosDeVinculo + alteracao, 0, 120);
+  
+  if (pontosDeVinculo != antigoVinculo) {
+    salvarEstado();
+  }
+  
+  // Determina a personalidade baseada nos pontos de vínculo
+  Personalidade antigaPers = personalidade;
+  if (pontosDeVinculo < 40) {
+    personalidade = PERSONALIDADE_SARCASTICA;
+  } else if (pontosDeVinculo < 80) {
+    personalidade = PERSONALIDADE_BASICA;
+  } else {
+    personalidade = PERSONALIDADE_SENSIVEL;
+  }
+  
+  // Se a personalidade evoluiu ou regrediu
+  if (personalidade != antigaPers) {
+    salvarEstado(); // Salva a mudança na EEPROM
+    
+    Serial.println(F("============================================="));
+    Serial.print(F("=== A PERSONALIDADE DO ROBÔ MUDOU ===\nNovo Vínculo: "));
+    Serial.print(pontosDeVinculo);
+    Serial.print(F(" | Nova Personalidade: "));
+    
+    // Desenha alerta de mudança na tela OLED por 3 segundos
+    u8g2.firstPage();
+    do {
+      u8g2.setFont(u8g2_font_profont11_tr);
+      u8g2.drawStr(12, 18, "PERSONALIDADE");
+      if (personalidade > antigaPers) {
+        u8g2.drawStr(12, 33, "EVOLUIU! :)");
+      } else {
+        u8g2.drawStr(12, 33, "REGREDIU... :(");
+      }
+      u8g2.setFont(u8g2_font_profont12_tf);
+      
+      if (personalidade == PERSONALIDADE_SARCASTICA) {
+        Serial.println(F("SARCASTICA"));
+        u8g2.drawStr(12, 52, "SARCASTICA");
+      } else if (personalidade == PERSONALIDADE_BASICA) {
+        Serial.println(F("BASICA"));
+        u8g2.drawStr(12, 52, "BASICA (NORMAL)");
+      } else if (personalidade == PERSONALIDADE_SENSIVEL) {
+        Serial.println(F("SENSIVEL"));
+        u8g2.drawStr(12, 52, "SENSIVEL (CARENTE)");
+      }
+    } while (u8g2.nextPage());
+    Serial.println(F("============================================="));
+    
+    // Toca som correspondente
+    if (personalidade > antigaPers) {
+      // Evolução: melodia feliz subindo
+      tone(buzzerPin, 523, 100); delay(120);
+      tone(buzzerPin, 784, 100); delay(120);
+      tone(buzzerPin, 1047, 300);
+    } else {
+      // Regressão: melodia triste descendo
+      tone(buzzerPin, 880, 150); delay(200);
+      tone(buzzerPin, 440, 350);
+    }
+    
+    delay(3000); // Aguarda 3 segundos para leitura do usuário
   }
 }
 
 // --- FUNÇÕES DE REAÇÃO E INTERAÇÃO DO PET ---
 void alimentarPet() {
-  fome = fome + 30;
+  int ganho = 30;
+  if (personalidade == PERSONALIDADE_SARCASTICA) ganho = 15;
+  fome = fome + ganho;
   if (fome > 100) fome = 100;
   
   animacaoComendo = true;
@@ -233,16 +550,30 @@ void alimentarPet() {
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
-  // Melodia do Buzzer: mastigação feliz
-  tone(buzzerPin, 440, 60); delay(80);
-  tone(buzzerPin, 554, 60); delay(80);
-  tone(buzzerPin, 659, 100);
+  // Melodia do Buzzer adaptada para a personalidade
+  if (personalidade == PERSONALIDADE_SARCASTICA) {
+    // Sarcástica: som curto e desanimado
+    tone(buzzerPin, 220, 100); delay(150);
+  } else if (personalidade == PERSONALIDADE_SENSIVEL) {
+    // Sensível: tom agudo e dócil
+    tone(buzzerPin, 880, 50); delay(70);
+    tone(buzzerPin, 1109, 50); delay(70);
+    tone(buzzerPin, 1318, 80); delay(100);
+  } else {
+    // Melodia do Buzzer padrão: mastigação feliz
+    tone(buzzerPin, 440, 60); delay(80);
+    tone(buzzerPin, 554, 60); delay(80);
+    tone(buzzerPin, 659, 100);
+  }
   
+  atualizarVinculo(3); // Ganha +3 pontos de vínculo por alimentar
   salvarEstado(); // Grava alteração de atributos na EEPROM
 }
 
 void brincarPet(bool tocarMelodia = true) {
-  diversao = diversao + 30;
+  int ganho = 30;
+  if (personalidade == PERSONALIDADE_SARCASTICA) ganho = 15;
+  diversao = diversao + ganho;
   if (diversao > 100) diversao = 100;
   
   animacaoComendo = false;
@@ -252,13 +583,25 @@ void brincarPet(bool tocarMelodia = true) {
   telaAtual = TELA_FACE;
   
   if (tocarMelodia) {
-    // Melodia do Buzzer: Mario Power-up feliz
-    tone(buzzerPin, 523, 50); delay(70);
-    tone(buzzerPin, 659, 50); delay(70);
-    tone(buzzerPin, 784, 50); delay(70);
-    tone(buzzerPin, 1047, 100);
+    if (personalidade == PERSONALIDADE_SARCASTICA) {
+      // Sarcástica: bip rápido e seco
+      tone(buzzerPin, 294, 100); delay(120);
+    } else if (personalidade == PERSONALIDADE_SENSIVEL) {
+      // Sensível: melodia dócil e fofa (caixinha de música)
+      tone(buzzerPin, 1047, 50); delay(70);
+      tone(buzzerPin, 1318, 50); delay(70);
+      tone(buzzerPin, 1568, 50); delay(70);
+      tone(buzzerPin, 2093, 100);
+    } else {
+      // Melodia do Buzzer padrão: Mario Power-up feliz
+      tone(buzzerPin, 523, 50); delay(70);
+      tone(buzzerPin, 659, 50); delay(70);
+      tone(buzzerPin, 784, 50); delay(70);
+      tone(buzzerPin, 1047, 100);
+    }
   }
   
+  atualizarVinculo(3); // Ganha +3 pontos de vínculo por brincar
   salvarEstado(); // Grava alteração de atributos na EEPROM
 }
 
@@ -273,11 +616,22 @@ void curarPet() {
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
-  // Melodia do Buzzer: toque de cura brilhante
-  tone(buzzerPin, 880, 80); delay(120);
-  tone(buzzerPin, 880, 80); delay(120);
-  tone(buzzerPin, 1109, 150);
+  // Melodia do Buzzer
+  if (personalidade == PERSONALIDADE_SARCASTICA) {
+    // Sarcástica
+    tone(buzzerPin, 440, 150); delay(200);
+  } else if (personalidade == PERSONALIDADE_SENSIVEL) {
+    // Sensível
+    tone(buzzerPin, 1760, 50); delay(80);
+    tone(buzzerPin, 1760, 50); delay(80);
+    tone(buzzerPin, 2218, 100);
+  } else {
+    tone(buzzerPin, 880, 80); delay(120);
+    tone(buzzerPin, 880, 80); delay(120);
+    tone(buzzerPin, 1109, 150);
+  }
   
+  atualizarVinculo(5); // Ganha +5 pontos de vínculo por curar
   salvarEstado(); // Grava alteração de atributos na EEPROM
 }
 
@@ -289,11 +643,23 @@ void acariciarPet() {
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
-  // Melodia do Buzzer: miado feliz ou carinho
-  tone(buzzerPin, 659, 100); delay(120);
-  tone(buzzerPin, 784, 100); delay(120);
-  tone(buzzerPin, 988, 150);
+  // Melodia do Buzzer
+  if (personalidade == PERSONALIDADE_SARCASTICA) {
+    // Sarcástica
+    tone(buzzerPin, 330, 100); delay(120);
+  } else if (personalidade == PERSONALIDADE_SENSIVEL) {
+    // Sensível
+    tone(buzzerPin, 1318, 80); delay(100);
+    tone(buzzerPin, 1568, 80); delay(100);
+    tone(buzzerPin, 1976, 120);
+  } else {
+    // Melodia do Buzzer padrão: miado feliz ou carinho
+    tone(buzzerPin, 659, 100); delay(120);
+    tone(buzzerPin, 784, 100); delay(120);
+    tone(buzzerPin, 988, 150);
+  }
   
+  atualizarVinculo(4); // Ganha +4 pontos de vínculo por receber carinho
   salvarEstado(); // Grava alteração na EEPROM
 }
 
@@ -429,6 +795,12 @@ void setup() {
 }
 
 void loop() {
+  // Se ainda não nasceu, roda o fluxo de incubação do ovo e desenha na tela
+  if (estadoNascimento == ESTADO_OVO || estadoNascimento == ESTADO_CHOCANDO) {
+    processarFluxoIncubacao();
+    return;
+  }
+
   // Leitura do sensor de luz (LDR) logo no início para uso no decaimento e animações
   int ldrValor = analogRead(ldrPin);
   int luzPorcento = map(ldrValor, 0, 1023, 100, 0);
@@ -469,15 +841,31 @@ void loop() {
   }
 
   // --- 2. DECAIMENTO DOS ATRIBUTOS DO PET ---
+  if (petTagPresente) {
+    diversao = 100; // Impede que sinta tédio/vontade de brincar enquanto estiver com o gatinho
+  }
   // Fome e diversão só decaem se o pet estiver acordado (luzPorcento >= 10)
   if (luzPorcento >= 10) {
-    if (millis() - tempoUltimaFome >= INTERVALO_FOME) {
+    unsigned long intervaloFomeAtual = INTERVALO_FOME;
+    if (personalidade == PERSONALIDADE_SENSIVEL) {
+      intervaloFomeAtual = (INTERVALO_FOME * 2) / 3; // 1.5x mais rápido
+    }
+    if (millis() - tempoUltimaFome >= intervaloFomeAtual) {
       fome = max(0, fome - 1);
       tempoUltimaFome = millis();
       salvarEstado();
     }
-    if (millis() - tempoUltimoBrincar >= INTERVALO_BRINCAR) {
-      diversao = max(0, diversao - 1);
+    
+    unsigned long intervaloBrincarAtual = INTERVALO_BRINCAR;
+    if (personalidade == PERSONALIDADE_SENSIVEL) {
+      intervaloBrincarAtual = (INTERVALO_BRINCAR * 2) / 3; // 1.5x mais rápido
+    } else if (personalidade == PERSONALIDADE_SARCASTICA) {
+      intervaloBrincarAtual = (INTERVALO_BRINCAR * 5) / 3; // ~0.6x da velocidade (1.66x mais devagar)
+    }
+    if (millis() - tempoUltimoBrincar >= intervaloBrincarAtual) {
+      if (!petTagPresente) {
+        diversao = max(0, diversao - 1);
+      }
       tempoUltimoBrincar = millis();
       salvarEstado();
     }
@@ -486,9 +874,16 @@ void loop() {
     tempoUltimaFome = millis();
     tempoUltimoBrincar = millis();
   }
-  if (millis() - tempoUltimaSaude >= INTERVALO_SAUDE) {
+  
+  unsigned long intervaloSaudeAtual = INTERVALO_SAUDE;
+  if (personalidade == PERSONALIDADE_SENSIVEL) {
+    intervaloSaudeAtual = INTERVALO_SAUDE / 2; // 2x mais rápido
+  }
+  if (millis() - tempoUltimaSaude >= intervaloSaudeAtual) {
     // Saúde decai se o pet estiver faminto E entediado, OU se estiver doente (estaDoente)
-    if ((fome <= 30 && diversao <= 30) || estaDoente) {
+    int limiarFome = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+    int limiarDiversao = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+    if ((fome <= limiarFome && diversao <= limiarDiversao) || estaDoente) {
       saude = max(0, saude - 1);
       salvarEstado();
     }
@@ -496,9 +891,11 @@ void loop() {
   }
 
   // --- 3. ALERTA PERIÓDICO DE ATENÇÃO DO BUZZER ---
-  if (fome <= 30 || diversao <= 30 || saude <= 30) {
+  int limiarAlerta = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+  int limiarUrgente = (personalidade == PERSONALIDADE_SENSIVEL) ? 25 : 15;
+  if (fome <= limiarAlerta || diversao <= limiarAlerta || saude <= limiarAlerta) {
     if (millis() - tempoUltimoAlerta >= INTERVALO_ALERTA) {
-      if (fome <= 15 || diversao <= 15 || saude <= 15) {
+      if (fome <= limiarUrgente || diversao <= limiarUrgente || saude <= limiarUrgente) {
         // Tom irritado/urgente se estiver bravo (bip-bip rápido e agudo)
         tone(buzzerPin, 523, 100); delay(150);
         tone(buzzerPin, 523, 100);
@@ -511,17 +908,37 @@ void loop() {
     }
   }
 
+  // --- 4. VERIFICAÇÃO PERIÓDICA DO VÍNCULO (Personalidade Dinâmica) ---
+  if (millis() - tempoUltimaVerificacaoVinculo >= 10000) { // Verifica a cada 10 segundos
+    tempoUltimaVerificacaoVinculo = millis();
+    
+    // Se bem cuidado: fome, diversão e saúde altos e sem doença
+    if (fome >= 70 && diversao >= 70 && saude >= 70 && !estaDoente) {
+      atualizarVinculo(1); // Ganha +1 ponto de vínculo
+    }
+    
+    // Se negligenciado: fome ou diversão baixas (sem comida ou sem brincar)
+    int limiarNegligencia = 30;
+    if (fome <= limiarNegligencia || diversao <= limiarNegligencia) {
+      atualizarVinculo(-3); // Perde -3 pontos de vínculo (regride de personalidade)
+    }
+  }
+
   // --- DOENÇA POR CLIMA E ESPIRROS ---
-  // Se o robô ficar no frio (temperatura < 25) por 30 segundos, ele fica doente (resfriado)
+  // Se o robô ficar no frio (temperatura < 25), roda uma probabilidade pequena a cada 1 minuto (60 segundos)
+  // de ficar resfriado (média de 1 vez por semana considerando 8 horas de frio por noite = 1 chance em 3360 por minuto)
   if (temperatura < 25 && temperatura > 0 && !estaDoente) {
     if (tempoNoFrio == 0) {
       tempoNoFrio = millis();
-    } else if (millis() - tempoNoFrio >= 30000) {
-      estaDoente = true;
-      salvarEstado();
-      // Melodia triste de doença:
-      tone(buzzerPin, 220, 300); delay(350);
-      tone(buzzerPin, 196, 500);
+    } else if (millis() - tempoNoFrio >= 60000) {
+      tempoNoFrio = millis(); // Reinicia o timer de 1 minuto para a próxima verificação
+      if (random(0, 3360) == 0) {
+        estaDoente = true;
+        salvarEstado();
+        // Melodia triste de doença:
+        tone(buzzerPin, 220, 300); delay(350);
+        tone(buzzerPin, 196, 500);
+      }
     }
   } else if (temperatura >= 25 || temperatura <= 0) {
     tempoNoFrio = 0;
@@ -576,12 +993,14 @@ void loop() {
       if (eUIDZerado(uidComida)) {
         copiaUID(uidComida, cardUID);
         Serial.println(F("-> Cartao registrado para COMIDA!"));
+        mostrarMensagemRegistro("COMIDA");
         alimentarPet();
       }
       else if (eUIDZerado(uidBrincar)) {
         if (!comparaUID(cardUID, uidComida)) {
           copiaUID(uidBrincar, cardUID);
           Serial.println(F("-> Cartao registrado para BRINCAR!"));
+          mostrarMensagemRegistro("BRINCAR");
           brincarPet();
         }
       }
@@ -589,6 +1008,7 @@ void loop() {
         if (!comparaUID(cardUID, uidComida) && !comparaUID(cardUID, uidBrincar)) {
           copiaUID(uidSaude, cardUID);
           Serial.println(F("-> Cartao registrado para SAUDE!"));
+          mostrarMensagemRegistro("SAUDE");
           curarPet();
         }
       }
@@ -596,6 +1016,7 @@ void loop() {
         if (!comparaUID(cardUID, uidComida) && !comparaUID(cardUID, uidBrincar) && !comparaUID(cardUID, uidSaude)) {
           copiaUID(uidPet, cardUID);
           Serial.println(F("-> Cartao registrado para PET!"));
+          mostrarMensagemRegistro("GATINHO (PET)");
           acariciarPet();
           petTagPresente = true;
         }
@@ -648,15 +1069,16 @@ void loop() {
   }
 
   // --- 4. LEITURA DOS SENSORES ---
-  // Captura o pico de som em uma janela rápida de ~1.5ms (15 amostras) para detectar sons curtos (como palmas)
-  int somMaxDev = 0;
+  // Captura o sinal de som em uma janela rápida de ~1.5ms (15 amostras) e calcula o desvio pico-a-pico
+  // para cancelar o DC offset (potenciômetro descalibrado) e evitar falsos positivos constantes
+  int maxLeitura = 0;
+  int minLeitura = 1023;
   for (int i = 0; i < 15; i++) {
     int leitura = analogRead(somAnalogPin);
-    int dev = abs(leitura - 512);
-    if (dev > somMaxDev) {
-      somMaxDev = dev;
-    }
+    if (leitura > maxLeitura) maxLeitura = leitura;
+    if (leitura < minLeitura) minLeitura = leitura;
   }
+  int somMaxDev = maxLeitura - minLeitura; // Sem dividir por 2 para aumentar a sensibilidade
 
   // Lógica de reação ao som baseada em dois níveis de barulho (silenciosa por som)
   if (somMaxDev >= LIMIAR_SUSTO) {
@@ -681,7 +1103,7 @@ void loop() {
   digitalWrite(trigPin, LOW); delayMicroseconds(2);
   digitalWrite(trigPin, HIGH); delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-  duracao = pulseIn(echoPin, HIGH, 25000); // Timeout de 25ms (~4.2 metros max) para evitar travamento da CPU se o sensor falhar
+  duracao = pulseIn(echoPin, HIGH, 3000); // Timeout otimizado de 3ms (~51cm max) para evitar travar a CPU/FPS do loop de animacao
   distancia = duracao * 0.034 / 2;
 
   if (millis() - tempoUltimaLeituraDHT >= 2000) {
@@ -730,6 +1152,16 @@ void loop() {
   float baseRw = 20.0;
   float baseRh = 30.0;
   float baseRadius = 6.0;
+
+  // Ajustes de Base por Personalidade
+  if (personalidade == PERSONALIDADE_SENSIVEL) {
+    baseLw = 22.0; // Olhos ligeiramente maiores
+    baseRw = 22.0;
+    baseLh = 32.0;
+    baseRh = 32.0;
+    baseRadius = 10.0; // Mais arredondados (olhar brilhante/fofo)
+  }
+
 
   // Lógica de Prioridades de Expressão Baseada em Sensores
   if (animacaoSusto) {
@@ -845,7 +1277,9 @@ void loop() {
     lagrimaL.ativa = false; lagrimaR.ativa = false;
     zZzVal.ativa = false;
   } 
-  else if (fome <= 15 || diversao <= 15 || saude <= 15) {
+  else if (fome <= (personalidade == PERSONALIDADE_SENSIVEL ? 25 : 15) || 
+           diversao <= (personalidade == PERSONALIDADE_SENSIVEL ? 25 : 15) || 
+           saude <= (personalidade == PERSONALIDADE_SENSIVEL ? 25 : 15)) {
     // BRAVO / MUITO NEGLIGENCIADO (Sem atenção por muito tempo)
     targetLw = 20.0; targetLh = 18.0;
     targetRw = 20.0; targetRh = 18.0;
@@ -863,7 +1297,10 @@ void loop() {
     lagrimaL.ativa = false; lagrimaR.ativa = false;
     zZzVal.ativa = false;
   }
-  else if (fome <= 30 || diversao <= 30 || saude <= 30 || estaDoente) {
+  else if (fome <= (personalidade == PERSONALIDADE_SENSIVEL ? 50 : 30) || 
+           diversao <= (personalidade == PERSONALIDADE_SENSIVEL ? 50 : 30) || 
+           saude <= (personalidade == PERSONALIDADE_SENSIVEL ? 50 : 30) || 
+           estaDoente) {
     // TRISTE / FAMINTO / ENTEDIADO / DOENTE
     targetLw = 20.0; targetLh = 16.0;
     targetRw = 20.0; targetRh = 16.0;
@@ -877,8 +1314,35 @@ void loop() {
     targetRy = baseRy + 3.0 + breathY;
 
     suor1.ativa = false; suor2.ativa = false;
-    lagrimaL.ativa = false; lagrimaR.ativa = false;
     zZzVal.ativa = false;
+
+    // Se for sensível, chora (gotas de lágrima) com facilidade
+    if (personalidade == PERSONALIDADE_SENSIVEL) {
+      if (!lagrimaL.ativa && random(0, 100) < 12) {
+        lagrimaL.ativa = true;
+        lagrimaL.x = baseLx - 8 + random(0, 4);
+        lagrimaL.y = baseLy + 10;
+        lagrimaL.velocidade = 0.7 + (random(0, 4) / 10.0);
+      }
+      if (!lagrimaR.ativa && random(0, 100) < 12) {
+        lagrimaR.ativa = true;
+        lagrimaR.x = baseRx + 4 + random(0, 4);
+        lagrimaR.y = baseLy + 10;
+        lagrimaR.velocidade = 0.7 + (random(0, 4) / 10.0);
+      }
+    } else {
+      lagrimaL.ativa = false; lagrimaR.ativa = false;
+    }
+    
+    // Processamento de queda física das lágrimas
+    if (lagrimaL.ativa) {
+      lagrimaL.y += lagrimaL.velocidade;
+      if (lagrimaL.y > 64) lagrimaL.ativa = false;
+    }
+    if (lagrimaR.ativa) {
+      lagrimaR.y += lagrimaR.velocidade;
+      if (lagrimaR.y > 64) lagrimaR.ativa = false;
+    }
   }
   else if (luzPorcento < 10) {
     // SONO: Luz apagada
@@ -1019,15 +1483,28 @@ void loop() {
     // Movimento Ocioso de Olhar ao Redor
     if (!estaPiscando) {
       if (millis() - tempoUltimoOlharOcioso > tempoProximoOlharOcioso) {
-        float lookX = random(-5, 6);
-        float lookY = random(-4, 5);
+        float lookX = 0;
+        float lookY = 0;
+        if (personalidade == PERSONALIDADE_SARCASTICA) {
+          // Sequência de revirar os olhos (ciclo de olhar em volta)
+          static byte faseRolada = 0;
+          faseRolada = (faseRolada + 1) % 5;
+          if (faseRolada == 0) { lookX = 0; lookY = 0; tempoProximoOlharOcioso = random(3000, 5000); }       // Centro
+          else if (faseRolada == 1) { lookX = -7; lookY = 2; tempoProximoOlharOcioso = 800; }                  // Esquerda-baixo
+          else if (faseRolada == 2) { lookX = -6; lookY = -4; tempoProximoOlharOcioso = 600; }                 // Esquerda-cima
+          else if (faseRolada == 3) { lookX = 6; lookY = -4; tempoProximoOlharOcioso = 600; }                  // Direita-cima
+          else if (faseRolada == 4) { lookX = 7; lookY = 2; tempoProximoOlharOcioso = 800; }                   // Direita-baixo
+        } else {
+          lookX = random(-5, 6);
+          lookY = random(-4, 5);
+          tempoProximoOlharOcioso = random(2500, 6000);
+        }
         targetLx = baseLx + lookX;
         targetLy = baseLy + lookY;
         targetRx = baseRx + lookX;
         targetRy = baseRy + lookY;
         
         tempoUltimoOlharOcioso = millis();
-        tempoProximoOlharOcioso = random(2500, 6000);
       }
     }
   }
@@ -1068,6 +1545,20 @@ void loop() {
   eyeRw += (targetRw - eyeRw) * INTERP_SPEED;
   eyeRh += (targetRh - eyeRh) * speedH;
   eyeRadius += (targetRadius - eyeRadius) * speedRadius;
+
+  // Atualização física do gatinho mini andando (fora do loop de renderização para rodar apenas uma vez por frame)
+  if (petTagPresente && !animacaoAcariciado && luzPorcento >= 10) {
+    if (millis() - tempoUltimoPasso >= 150) {
+      tempoUltimoPasso = millis();
+      if (catMiniDirRight) {
+        catMiniX += 1.0;
+        if (catMiniX >= 118.0) catMiniDirRight = false;
+      } else {
+        catMiniX -= 1.0;
+        if (catMiniX <= 96.0) catMiniDirRight = true;
+      }
+    }
+  }
 
   // --- 4. RENDERIZAÇÃO DA TELA ---
   u8g2.firstPage();
@@ -1212,14 +1703,28 @@ void loop() {
         u8g2.drawCircle(64, 50, 3);
       }
       else if (animacaoEspirro) {
-        // Espirro: Olhos "X X" espremidos
-        u8g2.drawLine((int)eyeLx - 8, (int)eyeLy - 8, (int)eyeLx + 8, (int)eyeLy + 8);
-        u8g2.drawLine((int)eyeLx - 8, (int)eyeLy + 8, (int)eyeLx + 8, (int)eyeLy - 8);
-        u8g2.drawLine((int)eyeRx - 8, (int)eyeRy - 8, (int)eyeRx + 8, (int)eyeRy + 8);
-        u8g2.drawLine((int)eyeRx - 8, (int)eyeRy + 8, (int)eyeRx + 8, (int)eyeRy - 8);
+        // Espirro: Olhos "> <" espremidos (mais expressivos que X X)
+        u8g2.drawLine((int)eyeLx - 8, (int)eyeLy - 6, (int)eyeLx + 4, (int)eyeLy);
+        u8g2.drawLine((int)eyeLx - 8, (int)eyeLy + 6, (int)eyeLx + 4, (int)eyeLy);
+        
+        u8g2.drawLine((int)eyeRx + 8, (int)eyeRy - 6, (int)eyeRx - 4, (int)eyeRy);
+        u8g2.drawLine((int)eyeRx + 8, (int)eyeRy + 6, (int)eyeRx - 4, (int)eyeRy);
         
         // Boca aberta de espirro
         u8g2.drawDisc(64, 50, 5);
+        
+        // Gotinhas de espirro voando para fora da boca (X=64, Y=50)
+        int tempoSneeze = millis() - tempoInicioEspirro;
+        int drop1X = 60 - (tempoSneeze / 20);
+        int drop1Y = 52 + (tempoSneeze / 25);
+        int drop2X = 64;
+        int drop2Y = 54 + (tempoSneeze / 15);
+        int drop3X = 68 + (tempoSneeze / 20);
+        int drop3Y = 52 + (tempoSneeze / 25);
+
+        if (drop1Y < 64 && drop1X >= 0) u8g2.drawVLine(drop1X, drop1Y, 2);
+        if (drop2Y < 64) u8g2.drawVLine(drop2X, drop2Y, 2);
+        if (drop3Y < 64 && drop3X < 128) u8g2.drawVLine(drop3X, drop3Y, 2);
       }
       else if (animacaoComendo) {
         // Mastigando: Olhos felizes ^ ^
@@ -1317,7 +1822,7 @@ void loop() {
         int maoOffset = (int)(sin(millis() * 0.006) * 12.0);
         int maoX = 64 + maoOffset;
         int maoY = 16;
-        u8g2.drawCircle(maoX, maoY, 6, U8G2_DRAW_UPPER); // semicírculo representando a mão
+        u8g2.drawCircle(maoX, maoY, 6, U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_UPPER_RIGHT); // semicírculo representando a mão
         u8g2.drawLine(maoX - 6, maoY, maoX - 10, maoY - 2); // punho/braço
         
         // Corações flutuando
@@ -1355,8 +1860,23 @@ void loop() {
         drawEye(eyeLx, eyeLy, eyeLw, eyeLh, eyeRadius);
         drawEye(eyeRx, eyeRy, eyeRw, eyeRh, eyeRadius);
         
-        // Expressões de Bravo e Triste baseadas nos atributos
-        if (fome <= 15 || diversao <= 15 || saude <= 15) {
+        // Se for a personalidade Sarcástica e estiver acordado, desenha pálpebras caídas (Upper Eyelids)
+        if (personalidade == PERSONALIDADE_SARCASTICA && luzPorcento >= 10) {
+          u8g2.setDrawColor(0); // Desenha em preto para cortar a metade superior
+          u8g2.drawBox((int)(eyeLx - eyeLw/2.0 - 2), (int)(eyeLy - eyeLh/2.0 - 1), (int)(eyeLw + 4), (int)(eyeLh * 0.45));
+          u8g2.drawBox((int)(eyeRx - eyeRw/2.0 - 2), (int)(eyeRy - eyeRh/2.0 - 1), (int)(eyeRw + 4), (int)(eyeRh * 0.45));
+          u8g2.setDrawColor(1); // Restaura cor branca
+          
+          // Desenha a dobra/vinco da pálpebra logo no corte
+          u8g2.drawLine((int)(eyeLx - eyeLw/2.0 - 1), (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45), (int)(eyeLx + eyeLw/2.0 + 1), (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45));
+          u8g2.drawLine((int)(eyeRx - eyeRw/2.0 - 1), (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45), (int)(eyeRx + eyeRw/2.0 + 1), (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45));
+        }
+        
+        // Expressões de Bravo e Triste baseadas nos atributos e na personalidade
+        int limiarBravo = (personalidade == PERSONALIDADE_SENSIVEL) ? 25 : 15;
+        int limiarTriste = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+        
+        if (fome <= limiarBravo || diversao <= limiarBravo || saude <= limiarBravo) {
           // --- ROSTO BRAVO ---
           int offsetMouthY = (int)(sin(millis() * 0.008) * 0.8); // leve tremor na boca
           // Sobrancelhas bravas (inclinadas para baixo no centro / \ )
@@ -1366,7 +1886,7 @@ void loop() {
           // Boca brava (linha reta que oscila levemente)
           u8g2.drawLine(58, 49 + offsetMouthY, 70, 49 + offsetMouthY);
         }
-        else if (fome <= 30 || diversao <= 30 || saude <= 30 || estaDoente) {
+        else if (fome <= limiarTriste || diversao <= limiarTriste || saude <= limiarTriste || estaDoente) {
           // --- ROSTO TRISTE MELHORADO ---
           int offsetMouthY = (int)(sin(millis() * 0.0025) * 0.6); // respiração lenta da boca
           // Sobrancelhas tristes (inclinadas para cima no centro \ / )
@@ -1378,12 +1898,29 @@ void loop() {
           u8g2.drawLine(61, 48 + offsetMouthY, 67, 48 + offsetMouthY);
           u8g2.drawLine(67, 48 + offsetMouthY, 70, 51 + offsetMouthY);
         }
+        else {
+          // --- ROSTO NORMAL / FELIZ ---
+          int offsetMouthY = (int)(sin(millis() * 0.0025) * 0.5); // respiração super sutil
+          
+          if (personalidade == PERSONALIDADE_SARCASTICA) {
+            // Boca ociosa sarcástica (tédio): linha torta/assimétrica
+            u8g2.drawLine(58, 48 + offsetMouthY, 64, 49 + offsetMouthY);
+            u8g2.drawLine(64, 49 + offsetMouthY, 70, 51 + offsetMouthY);
+          } else {
+            // Boca fofa de gatinho (w) centralizada em X=64
+            u8g2.drawLine(60, 48 + offsetMouthY, 62, 50 + offsetMouthY);
+            u8g2.drawLine(62, 50 + offsetMouthY, 64, 48 + offsetMouthY);
+            u8g2.drawLine(64, 48 + offsetMouthY, 66, 50 + offsetMouthY);
+            u8g2.drawLine(66, 50 + offsetMouthY, 68, 48 + offsetMouthY);
+          }
+        }
         
         // --- BALÃO DE PENSAMENTO (HUD de necessidades do Pet) ---
         int numIcons = 0;
-        bool precisaComida = (fome <= 30);
-        bool precisaBrincar = (diversao <= 30);
-        bool precisaSaude = (saude <= 30 || estaDoente);
+        int limiarHUD = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+        bool precisaComida = (fome <= limiarHUD);
+        bool precisaBrincar = (diversao <= limiarHUD);
+        bool precisaSaude = (saude <= limiarHUD || estaDoente);
         if (precisaComida) numIcons++;
         if (precisaBrincar) numIcons++;
         if (precisaSaude) numIcons++;
@@ -1440,7 +1977,7 @@ void loop() {
         }
         
         // Sono: Letras "zZz" flutuando
-        if (luzPorcento < 15 && zZzVal.ativa) {
+        if (luzPorcento < 10 && zZzVal.ativa) {
           u8g2.setFont(u8g2_font_profont11_tr);
           if (zZzVal.tamanho < 1.3) {
             u8g2.drawStr((int)zZzVal.x, (int)zZzVal.y, "z");
@@ -1473,8 +2010,8 @@ void loop() {
           u8g2.drawLine(70, 50 + tremorMouth, 74, 48 + tremorMouth);
         }
         
-        // Úmido: Desenha lágrimas e boca triste
-        if (umidade > 75) {
+        // Úmido ou Personalidade Sensível Triste: Desenha lágrimas e boca triste
+        if (umidade > 75 || (personalidade == PERSONALIDADE_SENSIVEL && (lagrimaL.ativa || lagrimaR.ativa))) {
           if (lagrimaL.ativa) {
             u8g2.drawFilledEllipse((int)lagrimaL.x, (int)lagrimaL.y, 2, 3);
             u8g2.drawLine((int)lagrimaL.x, (int)lagrimaL.y - 2, (int)lagrimaL.x, (int)lagrimaL.y);
@@ -1484,7 +2021,8 @@ void loop() {
             u8g2.drawLine((int)lagrimaR.x, (int)lagrimaR.y - 2, (int)lagrimaR.x, (int)lagrimaR.y);
           }
           // Desenha boca triste melhorada (só se não desenhou a de fome/bravo)
-          if (fome > 30 && diversao > 30 && saude > 30) {
+          int limiarTriste = (personalidade == PERSONALIDADE_SENSIVEL) ? 50 : 30;
+          if (fome > limiarTriste && diversao > limiarTriste && saude > limiarTriste) {
             int offsetMouthY = (int)(sin(millis() * 0.0025) * 0.6); // respiração lenta
             u8g2.drawLine(58, 51 + offsetMouthY, 61, 48 + offsetMouthY);
             u8g2.drawLine(61, 48 + offsetMouthY, 67, 48 + offsetMouthY);
@@ -1495,7 +2033,7 @@ void loop() {
       
       // Desenha o gatinho mini no canto inferior da tela se a etiqueta estiver presente
       if (petTagPresente && !animacaoAcariciado) {
-        if (luzPorcento < 15) {
+        if (luzPorcento < 10) {
           // Gatinho dormindo
           u8g2.drawDisc(112, 58, 4);
           u8g2.drawPixel(107, 57); // orelha 1
@@ -1508,18 +2046,7 @@ void loop() {
           else if (zOffset == 1) u8g2.drawStr(120, 50, "z");
           else if (zOffset == 2) u8g2.drawStr(122, 46, "Z");
         } else {
-          // Gatinho andando
-          if (millis() - tempoUltimoPasso >= 150) {
-            tempoUltimoPasso = millis();
-            if (catMiniDirRight) {
-              catMiniX += 1.0;
-              if (catMiniX >= 118.0) catMiniDirRight = false;
-            } else {
-              catMiniX -= 1.0;
-              if (catMiniX <= 96.0) catMiniDirRight = true;
-            }
-          }
-          
+          // Gatinho andando (apenas desenha, física atualizada fora do loop de renderização)
           int cx = (int)catMiniX;
           int cy = 54;
           u8g2.setFont(u8g2_font_profont11_tr);
