@@ -62,22 +62,28 @@ const int ldrPin = 1; // GPIO 1 (ADC1_CH0)
 const int botaoPin = 21;
 const int buzzerPin = 18;
 const int somAnalogPin = 2; // GPIO 2 (ADC1_CH1)
-// Volume do buzzer: 0=mudo, 1-10=escala de volume (duty cycle LEDC)
-int volumeBuzzer = 7;
+// Modo silencioso: true = sem som no buzzer
+bool modoSilencioso = false;
 
-// Toca uma nota usando LEDC com duty cycle proporcional ao volume
-// Substitui tone() + noTone() para permitir controle de volume real (ESP32 Core v3.0+)
+// Feedback temporário na tela para o modo silencioso
+unsigned long tempoFimFeedbackSilencioso = 0;
+String feedbackSilenciosoMsg = "";
+
+// Toca uma nota usando LEDC com 50% de duty cycle (volume máximo físico do buzzer) se não estiver silencioso
+// Substitui tone() + noTone() para compatibilidade com ESP32 Core v3.0+
 void myTone(int freq, long dur_ms = 0) {
-  if (volumeBuzzer == 0 || freq == 0) {
+  if (modoSilencioso || freq == 0) {
     ledcWrite(buzzerPin, 0);
     return;
   }
-  // No ESP32 Core v3.0+, ledcWriteTone() força a resolução para 10 bits (0-1023).
-  // Mapeamos o volume (1-10) na escala de 10 bits de 15 a 512 (512 = 50% de duty cycle, que é o volume físico máximo).
-  int duty = map(volumeBuzzer, 1, 10, 15, 512);
-  ledcWriteTone(buzzerPin, freq);
-  ledcWrite(buzzerPin, duty);
-  if (dur_ms > 0) delay(dur_ms);
+  // Altera a frequência do timer associado ao pino com resolução de 8 bits
+  ledcChangeFrequency(buzzerPin, freq, 8);
+  // Escreve 50% de duty cycle (128 de 256) para som normal
+  ledcWrite(buzzerPin, 128);
+  if (dur_ms > 0) {
+    delay(dur_ms);
+    myNoTone(); // Silencia o buzzer após a duração especificada
+  }
 }
 
 void myNoTone() {
@@ -602,7 +608,7 @@ void salvarEstado() {
   preferences.putBool("sentinela", modoSentinela);
   preferences.putBool("piano", modoPiano);
   preferences.putBool("sonoAuto", sonoAutomaticoHorario);
-  preferences.putUChar("volume", (uint8_t)volumeBuzzer);
+  preferences.putBool("silencioso", modoSilencioso);
   preferences.putString("jsonSkills", jsonSkills);
   preferences.putString("jsonFrases", jsonFrases);
   
@@ -653,7 +659,7 @@ void carregarEstado() {
     modoSentinela = preferences.getBool("sentinela", false);
     modoPiano = preferences.getBool("piano", false);
     sonoAutomaticoHorario = preferences.getBool("sonoAuto", true);
-    volumeBuzzer = (int)preferences.getUChar("volume", 7);
+    modoSilencioso = preferences.getBool("silencioso", false);
     if (preferences.isKey("jsonSkills")) {
       jsonSkills = preferences.getString("jsonSkills");
     } else {
@@ -1391,7 +1397,7 @@ void handleRoot() {
   html += F("  data.append('modoSentinela', document.getElementById('modoSentinela').checked ? '1' : '0');");
   html += F("  data.append('modoPiano', document.getElementById('modoPiano').checked ? '1' : '0');");
   html += F("  data.append('sonoAuto', document.getElementById('sonoAuto').checked ? '1' : '0');");
-  html += F("  data.append('volume', document.getElementById('volumeBuzzer').value);");
+  html += F("  data.append('silencioso', document.getElementById('modoSilencioso').checked ? '1' : '0');");
   html += F("  data.append('petFome', document.getElementById('petFome').value);");
   html += F("  data.append('petDiversao', document.getElementById('petDiversao').value);");
   html += F("  data.append('petSaude', document.getElementById('petSaude').value);");
@@ -1700,6 +1706,11 @@ void handleRoot() {
   if (sonoAutomaticoHorario) html += F(" checked");
   html += F("> Dormir por Horario (22h - 8h)");
   html += F("      </label>");
+  html += F("      <label style='font-size: 0.9em; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #bb86fc;'>");
+  html += F("        <input type='checkbox' id='modoSilencioso' value='1'");
+  if (modoSilencioso) html += F(" checked");
+  html += F("> 🔇 Modo Silencioso (Desativar Sons)");
+  html += F("      </label>");
   html += F("    </div>");
   html += F("  </div>");
 
@@ -1767,20 +1778,6 @@ void handleRoot() {
   html += F("    </div>");
   html += F("  </div>");
 
-  html += F("  <div class='config-group'>");
-  html += F("    <label>Volume do Buzzer</label>");
-  html += F("    <div style='display:flex;align-items:center;gap:12px;margin-top:8px;'>");
-  html += F("      <span style='font-size:1.2em;'>🔇</span>");
-  html += F("      <input type='range' id='volumeBuzzer' min='0' max='10' step='1' value='");
-  html += String(volumeBuzzer);
-  html += F("' style='flex:1;accent-color:#bb86fc;'>");
-  html += F("      <span style='font-size:1.2em;'>🔊</span>");
-  html += F("      <span id='volumeLabel' style='min-width:24px;text-align:center;font-weight:bold;color:#bb86fc;'>");
-  html += String(volumeBuzzer);
-  html += F("</span>");
-  html += F("    </div>");
-  html += F("    <script>document.getElementById('volumeBuzzer').oninput=function(){document.getElementById('volumeLabel').innerText=this.value;};</script>");
-  html += F("  </div>");
 
   html += F("  <div class='config-group'>");
   html += F("    <label>Testador de Expressões / Carinhas (4 Segundos)</label>");
@@ -1873,8 +1870,16 @@ void handleSaveConfig() {
   if (server.hasArg("sonoAuto")) {
     sonoAutomaticoHorario = (server.arg("sonoAuto") == "1");
   }
-  if (server.hasArg("volume")) {
-    volumeBuzzer = constrain(server.arg("volume").toInt(), 0, 10);
+  if (server.hasArg("silencioso")) {
+    bool antigoSilencioso = modoSilencioso;
+    modoSilencioso = (server.arg("silencioso") == "1");
+    if (antigoSilencioso != modoSilencioso) {
+      feedbackSilenciosoMsg = modoSilencioso ? "MODO SILENCIOSO" : "SOM ATIVADO";
+      tempoFimFeedbackSilencioso = millis() + 2000;
+      if (!modoSilencioso) {
+        myTone(880, 150);
+      }
+    }
   }
   
   if (server.hasArg("petFome")) fome = server.arg("petFome").toInt();
@@ -3140,40 +3145,62 @@ void loop() {
     return;
   }
 
-  // --- 1. LÓGICA DO BOTÃO (Slideshow Automático com Debounce / Modo Piano) ---
+  // --- 1. LÓGICA DO BOTÃO (Pressionamento Longo 4s para Silencioso / Transições) ---
   bool botaoPressionado = (digitalRead(botaoPin) == LOW);
   static bool botaoUltimoEstado = HIGH;
-  static unsigned long tempoPressionadoBotao = 0;
-  
-  if (modoPiano && idadeDias >= 21) {
-    if (botaoPressionado && botaoUltimoEstado == HIGH) {
-      tempoPressionadoBotao = millis();
-      delay(50); // Debounce
-    }
-    else if (botaoUltimoEstado == LOW && !botaoPressionado) {
-      unsigned long dur = millis() - tempoPressionadoBotao;
-      if (dur < 300) {
-        myTone(523, 150); // C5 (Dó)
-      } else if (dur < 800) {
-        myTone(659, 150); // E5 (Mi)
-      } else {
-        myTone(784, 250); // G5 (Sol)
-      }
-      delay(50); // Debounce
-    }
-    botaoUltimoEstado = botaoPressionado;
-  } else {
-    if (botaoPressionado && botaoUltimoEstado == HIGH) {
-      if (telaAtual == TELA_FACE) {
-        mudarTelaPara(TELA_TEMP);
-        tempoBotaoPressionado = millis();
-      } else {
-        mudarTelaPara(TELA_FACE);
-      }
-      delay(50); // Debounce
-    }
-    botaoUltimoEstado = botaoPressionado;
+  static unsigned long tempoInicioPressionado = 0;
+  static bool gatilhoSilenciosoDisparado = false;
+
+  // Borda de descida (quando aperta o botão)
+  if (botaoPressionado && botaoUltimoEstado == HIGH) {
+    tempoInicioPressionado = millis();
+    gatilhoSilenciosoDisparado = false;
+    delay(50); // Debounce
   }
+  
+  // Enquanto o botão continuar pressionado, verifica se deu 4 segundos
+  if (botaoPressionado && !gatilhoSilenciosoDisparado) {
+    if (millis() - tempoInicioPressionado >= 4000) {
+      modoSilencioso = !modoSilencioso;
+      salvarEstado();
+      
+      feedbackSilenciosoMsg = modoSilencioso ? "MODO SILENCIOSO" : "SOM ATIVADO";
+      tempoFimFeedbackSilencioso = millis() + 2000; // Feedback visual por 2s
+      
+      gatilhoSilenciosoDisparado = true;
+      if (!modoSilencioso) {
+        myTone(880, 150); // Bip curto de feedback ao ligar
+      }
+    }
+  }
+
+  // Borda de subida (quando solta o botão)
+  if (botaoUltimoEstado == LOW && !botaoPressionado) {
+    unsigned long duracaoPressionado = millis() - tempoInicioPressionado;
+    
+    // Só processa o clique curto se não chegou a disparar a ação de 4s
+    if (duracaoPressionado < 4000) {
+      if (modoPiano && idadeDias >= 21) {
+        if (duracaoPressionado < 300) {
+          myTone(523, 150); // C5 (Dó)
+        } else if (duracaoPressionado < 800) {
+          myTone(659, 150); // E5 (Mi)
+        } else {
+          myTone(784, 250); // G5 (Sol)
+        }
+      } else {
+        // Modo transição de telas normal
+        if (telaAtual == TELA_FACE) {
+          mudarTelaPara(TELA_TEMP);
+          tempoBotaoPressionado = millis();
+        } else {
+          mudarTelaPara(TELA_FACE);
+        }
+      }
+    }
+    delay(50); // Debounce
+  }
+  botaoUltimoEstado = botaoPressionado;
 
   // Transições Automáticas de Tempo (só ativa se não estiver em transição)
   if (!emTransicao) {
@@ -4098,7 +4125,14 @@ void loop() {
 
   u8g2.firstPage();
   do {
-    if (emTransicao) {
+    if (millis() < tempoFimFeedbackSilencioso) {
+      u8g2.setFont(u8g2_font_6x12_tr);
+      int strWidth = u8g2.getStrWidth(feedbackSilenciosoMsg.c_str());
+      u8g2.drawStr((128 - strWidth) / 2, 36, feedbackSilenciosoMsg.c_str());
+      u8g2.drawFrame(10, 15, 108, 34);
+      int typeWidth = u8g2.getStrWidth((feedbackSilenciosoMsg.indexOf("SILENCIOSO") != -1) ? "MUTED" : "SOUND");
+      u8g2.drawStr((128 - typeWidth) / 2, 27, (feedbackSilenciosoMsg.indexOf("SILENCIOSO") != -1) ? "MUTED" : "SOUND");
+    } else if (emTransicao) {
       if (forward) {
         // Desliza da direita para a esquerda:
         // Tela de origem sai para a esquerda (-offset)
