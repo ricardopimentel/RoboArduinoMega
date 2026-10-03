@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <time.h>
+#include <esp_now.h>
 
 enum EstadoTela {
   TELA_FACE,
@@ -44,6 +45,12 @@ const unsigned long DURACAO_REACAO = 6000;    // Duração das animações de re
 
 // --- CONFIGURAÇÃO DO TEMPO DE INCUBAÇÃO DO OVO ---
 unsigned int tempoIncubacaoSegundos = 15; // Tempo para o ovo chocar em segundos (padrão: 900 para 15 minutos)
+
+// Variáveis globais para bufferizar RFID enviadas ao ESP-NOW
+bool rfidLidoPendente = false;
+byte rfidUIDPendente[4] = {0, 0, 0, 0};
+uint8_t rfidAcaoPendente = 0;
+uint16_t somMaxDevGlobal = 0;
 
 // --- CONFIGURAÇÃO DE LÓGICA DO SENSOR DE SOM ---
 // Defina como true se o sensor envia nível LOW quando detecta barulho (Padrão LM393/KY-038)
@@ -91,8 +98,8 @@ void myNoTone() {
 }
 
 // LIMIARES CONFIGURÁVEIS (Valor padrão inicial, salvos no NVS)
-int limiarBrincar = 180;  // Adaptado para resolução de 12 bits do ESP32 (0-4095)
-int limiarSusto = 280;   // Adaptado para resolução de 12 bits do ESP32 (0-4095)
+int limiarBrincar = 130;  // Som baixo / voz normal / fala (0-4095)
+int limiarSusto = 700;    // Som forte / grito / palma alta (0-4095)
 int limiarLuzBaixo = 10;
 int limiarLuzAlto = 80;
 float limiarTempBaixo = 25.0;
@@ -645,6 +652,8 @@ void carregarEstado() {
     // Carrega os limiares configuráveis se existirem
     if (preferences.isKey("limPlay")) limiarBrincar = preferences.getUShort("limPlay");
     if (preferences.isKey("limSusto")) limiarSusto = preferences.getUShort("limSusto");
+    if (limiarBrincar <= 0) limiarBrincar = 130;
+    if (limiarSusto <= 0) limiarSusto = 700;
     if (preferences.isKey("limLuzB")) limiarLuzBaixo = preferences.getUChar("limLuzB");
     if (preferences.isKey("limLuzA")) limiarLuzAlto = preferences.getUChar("limLuzA");
     if (preferences.isKey("limTempB")) limiarTempBaixo = preferences.getFloat("limTempB");
@@ -728,8 +737,8 @@ void carregarEstado() {
                    "{\"day\":15,\"name\":\"Falas de Personalidade\",\"desc\":\"O robo ganha voz e exibe caixas de dialogo na tela com mensagens baseadas em humor.\"},"
                    "{\"day\":21,\"name\":\"Teclado Piano no Botao\",\"desc\":\"O botao fisico vira um piano seletor no buzzer (cliques curtos/longos emitem notas).\"},"
                    "{\"day\":30,\"name\":\"Meditacao Zen\",\"desc\":\"Seu pet aprende a economizar energia e seus atributos decaem 30% mais devagar.\"}]");
-    limiarBrincar = 180;
-    limiarSusto = 280;
+    limiarBrincar = 130;
+    limiarSusto = 700;
     limiarLuzBaixo = 10;
     limiarLuzAlto = 80;
     limiarTempBaixo = 25.0;
@@ -840,6 +849,9 @@ void processarFluxoIncubacao() {
 
   // Leitura do RFID para chocar o ovo
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+    rfidLidoPendente = true;
+    memcpy(rfidUIDPendente, rfid.uid.uidByte, 4);
+    
     if (estadoNascimento == ESTADO_OVO) {
       estadoNascimento = ESTADO_CHOCANDO;
       segundosChocados = 0;
@@ -986,6 +998,8 @@ void alimentarPet() {
   animacaoCurando = false;
   animacaoAcariciado = false;
   animacaoIrritado = false;
+  tipoReacaoOciosa = 0;
+  tempoProximaReacaoOciosa = millis() + random(25000, 50000);
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
@@ -1013,6 +1027,8 @@ void brincarPet(bool tocarMelodia = true) {
   animacaoCurando = false;
   animacaoAcariciado = false;
   animacaoIrritado = false;
+  tipoReacaoOciosa = 0;
+  tempoProximaReacaoOciosa = millis() + random(25000, 50000);
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
@@ -1040,6 +1056,8 @@ void curarPet() {
   animacaoCurando = true;
   animacaoAcariciado = false;
   animacaoIrritado = false;
+  tipoReacaoOciosa = 0;
+  tempoProximaReacaoOciosa = millis() + random(25000, 50000);
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
@@ -1062,6 +1080,8 @@ void acariciarPet() {
   animacaoCurando = false;
   animacaoAcariciado = true;
   animacaoIrritado = false;
+  tipoReacaoOciosa = 0;
+  tempoProximaReacaoOciosa = millis() + random(25000, 50000);
   tempoInicioReacao = millis();
   telaAtual = TELA_FACE;
   
@@ -2114,6 +2134,130 @@ void inicializarWiFi() {
   }
 }
 
+// --- ESP-NOW CONFIGURAÇÃO E ENVIO ---
+uint8_t macCabeca[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Endereço de Broadcast
+
+struct __attribute__((packed)) RobotState {
+  uint8_t fome;
+  uint8_t diversao;
+  uint8_t saude;
+  uint8_t humor;           // 0=FELIZ, 1=ENTEDIADO, 2=CARENTE, 3=DOENTE
+  uint8_t estadoNascimento; // 0=OVO, 1=CHOCANDO, 2=NASCIDO
+  uint8_t personalidade;   // 0=BASICA, 1=SARCASTICA, 2=SENSIVEL
+  uint32_t idadeDias;
+  float temperatura;
+  float umidade;
+  uint8_t luzPorcento;
+  bool petDormindo;
+  bool choqueDetectado;
+  bool obstaculoDetectado;
+  bool animacaoComendo;
+  bool animacaoBrincando;
+  bool animacaoCurando;
+  bool animacaoAcariciado;
+  bool animacaoHighFive;
+  bool animacaoDado;
+  bool animacaoDance;
+  uint8_t valorDado;
+  char fala[64];
+  
+  // Novos campos para a Fase 2 (RFID integrado)
+  bool rfidLido;
+  uint8_t rfidUID[4];
+  
+  // Novos campos para a arquitetura Cérebro-Corpo
+  uint8_t rfidAcao;
+  uint16_t somNivel;
+  bool botaoPressionado;
+  
+  // Limiares configuráveis da página web
+  uint16_t limiarBrincar;
+  uint16_t limiarSusto;
+  uint8_t limiarLuzBaixo;
+  uint8_t limiarLuzAlto;
+  float limiarTempBaixo;
+  float limiarTempAlto;
+};
+
+RobotState estadoParaEnvio;
+unsigned long ultimoEnvioEspNow = 0;
+
+void inicializarESPNow() {
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Erro ao inicializar ESP-NOW");
+    return;
+  }
+  
+  esp_now_peer_info_t peerInfo;
+  memset(&peerInfo, 0, sizeof(peerInfo));
+  memcpy(peerInfo.peer_addr, macCabeca, 6);
+  peerInfo.channel = 0; // 0 define canal dinâmico correspondente ao da rede
+  peerInfo.ifidx = WIFI_IF_STA; // Força o uso da interface Station do Wi-Fi
+  peerInfo.encrypt = false;
+  
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Falha ao adicionar peer de Broadcast");
+    return;
+  }
+  Serial.println("ESP-NOW de Broadcast Inicializado com Sucesso!");
+}
+
+void enviarEstadoPorEspNow() {
+  estadoParaEnvio.fome = fome;
+  estadoParaEnvio.diversao = diversao;
+  estadoParaEnvio.saude = saude;
+  estadoParaEnvio.humor = (uint8_t)humorAtual;
+  estadoParaEnvio.estadoNascimento = (uint8_t)estadoNascimento;
+  estadoParaEnvio.personalidade = (uint8_t)personalidade;
+  estadoParaEnvio.idadeDias = idadeDias;
+  estadoParaEnvio.temperatura = temperatura;
+  estadoParaEnvio.umidade = umidade;
+  estadoParaEnvio.luzPorcento = (uint8_t)luzPorcento;
+  estadoParaEnvio.petDormindo = petDormindo;
+  estadoParaEnvio.choqueDetectado = choqueDetectado;
+  estadoParaEnvio.obstaculoDetectado = (digitalRead(obstaculoPin) == LOW);
+  
+  estadoParaEnvio.animacaoComendo = animacaoComendo;
+  estadoParaEnvio.animacaoBrincando = animacaoBrincando;
+  estadoParaEnvio.animacaoCurando = animacaoCurando;
+  estadoParaEnvio.animacaoAcariciado = animacaoAcariciado;
+  estadoParaEnvio.animacaoHighFive = animacaoHighFive;
+  estadoParaEnvio.animacaoDado = animacaoDado;
+  estadoParaEnvio.animacaoDance = animacaoDance;
+  estadoParaEnvio.valorDado = (uint8_t)valorDado;
+  
+  if (tempoFimFala > 0 && millis() < tempoFimFala) {
+    strncpy(estadoParaEnvio.fala, textoFala.c_str(), sizeof(estadoParaEnvio.fala));
+    estadoParaEnvio.fala[sizeof(estadoParaEnvio.fala) - 1] = '\0';
+  } else {
+    estadoParaEnvio.fala[0] = '\0';
+  }
+  
+  // Copia os dados de RFID pendentes para transmissão e consome o evento
+  estadoParaEnvio.rfidLido = rfidLidoPendente;
+  memcpy(estadoParaEnvio.rfidUID, rfidUIDPendente, 4);
+  rfidLidoPendente = false;
+  memset(rfidUIDPendente, 0, 4);
+  
+  // Novos campos para a arquitetura Cérebro-Corpo
+  estadoParaEnvio.rfidAcao = rfidAcaoPendente;
+  estadoParaEnvio.somNivel = somMaxDevGlobal;
+  estadoParaEnvio.botaoPressionado = (digitalRead(botaoPin) == LOW);
+  
+  // Limiares configuráveis definidos via Web
+  estadoParaEnvio.limiarBrincar = (uint16_t)limiarBrincar;
+  estadoParaEnvio.limiarSusto = (uint16_t)limiarSusto;
+  estadoParaEnvio.limiarLuzBaixo = (uint8_t)limiarLuzBaixo;
+  estadoParaEnvio.limiarLuzAlto = (uint8_t)limiarLuzAlto;
+  estadoParaEnvio.limiarTempBaixo = limiarTempBaixo;
+  estadoParaEnvio.limiarTempAlto = limiarTempAlto;
+  
+  // Consome o evento de ação RFID
+  rfidAcaoPendente = 0;
+  
+  esp_now_send(macCabeca, (uint8_t *) &estadoParaEnvio, sizeof(estadoParaEnvio));
+}
+
 void setup() {
   Serial.begin(115200); // ESP32 roda melhor em baud rate mais alto (115200)
   
@@ -2143,6 +2287,7 @@ void setup() {
 
   // Inicializa o WiFi e configura o Web Server
   inicializarWiFi();
+  inicializarESPNow();
   if (wifiConectado) {
     server.on("/", HTTP_GET, handleRoot);
     server.on("/feed", HTTP_POST, handleFeed);
@@ -3366,6 +3511,10 @@ void loop() {
     leuCartao = true;
     byte* cardUID = rfid.uid.uidByte;
     
+    // Alimenta o buffer do ESP-NOW para enviar à cabeça
+    rfidLidoPendente = true;
+    memcpy(rfidUIDPendente, cardUID, 4);
+    
     // Imprime o UID do cartão no Serial Monitor
     Serial.print(F("RFID lido:"));
     for (byte i = 0; i < rfid.uid.size; i++) {
@@ -3377,16 +3526,20 @@ void loop() {
     // LÓGICA DE COMPARAÇÃO / APRENDIZADO
     if (!eUIDZerado(uidComida) && comparaUID(cardUID, uidComida)) {
       alimentarPet();
+      rfidAcaoPendente = 1;
     }
     else if (!eUIDZerado(uidBrincar) && comparaUID(cardUID, uidBrincar)) {
       brincarPet();
+      rfidAcaoPendente = 2;
     }
     else if (!eUIDZerado(uidSaude) && comparaUID(cardUID, uidSaude)) {
       curarPet();
+      rfidAcaoPendente = 3;
     }
     else if (!eUIDZerado(uidPet) && comparaUID(cardUID, uidPet)) {
       acariciarPet();
       petTagPresente = true;
+      rfidAcaoPendente = 4;
     }
     else {
       // Aprende o cartão na ordem
@@ -3395,6 +3548,7 @@ void loop() {
         Serial.println(F("-> Cartao registrado para COMIDA!"));
         mostrarMensagemRegistro("COMIDA");
         alimentarPet();
+        rfidAcaoPendente = 1;
       }
       else if (eUIDZerado(uidBrincar)) {
         if (!comparaUID(cardUID, uidComida)) {
@@ -3402,6 +3556,7 @@ void loop() {
           Serial.println(F("-> Cartao registrado para BRINCAR!"));
           mostrarMensagemRegistro("BRINCAR");
           brincarPet();
+          rfidAcaoPendente = 2;
         }
       }
       else if (eUIDZerado(uidSaude)) {
@@ -3410,6 +3565,7 @@ void loop() {
           Serial.println(F("-> Cartao registrado para SAUDE!"));
           mostrarMensagemRegistro("SAUDE");
           curarPet();
+          rfidAcaoPendente = 3;
         }
       }
       else if (eUIDZerado(uidPet)) {
@@ -3419,6 +3575,7 @@ void loop() {
           mostrarMensagemRegistro("GATINHO (PET)");
           acariciarPet();
           petTagPresente = true;
+          rfidAcaoPendente = 4;
         }
       }
     }
@@ -3484,27 +3641,29 @@ void loop() {
   }
 
   // --- 4. LEITURA DOS SENSORES ---
-  // Captura o sinal de som em uma janela rápida de ~1.5ms (15 amostras) e calcula o desvio pico-a-pico
-  // para cancelar o DC offset (potenciômetro descalibrado) e evitar falsos positivos constantes
+  // Captura o sinal de som em uma janela de ~4ms (80 amostras com 50us) e calcula o desvio pico-a-pico
+  // para cancelar o DC offset e capturar a amplitude real da onda sonora
   int maxLeitura = 0;
   int minLeitura = 4095;
-  for (int i = 0; i < 15; i++) {
+  for (int i = 0; i < 80; i++) {
     int leitura = analogRead(somAnalogPin);
     if (leitura > maxLeitura) maxLeitura = leitura;
     if (leitura < minLeitura) minLeitura = leitura;
+    delayMicroseconds(50);
   }
-  int somMaxDev = maxLeitura - minLeitura; // Sem dividir por 2 para aumentar a sensibilidade
+  int somMaxDev = maxLeitura - minLeitura;
+  somMaxDevGlobal = somMaxDev;
 
-  // Lógica de reação ao som baseada em dois níveis de barulho (silenciosa por som)
+  // Lógica de reação ao som baseada nos limiares ajustados (400=médio, 1000=forte)
+  static unsigned long tempoUltimaReacaoSom = 0;
   if (somMaxDev >= limiarSusto) {
-    if (!animacaoSusto) {
-      Serial.println(F("Som ALTO detectado! Susto (Silencioso)!"));
+    if (!animacaoSusto && (millis() - tempoUltimaReacaoSom > 2000)) {
+      tempoUltimaReacaoSom = millis();
+      Serial.println(F("Som ALTO detectado! Susto!"));
       animacaoSusto = true;
       tempoInicioSusto = millis();
       mudarTelaPara(TELA_FACE);
-      
       atualizarVinculo(-2); // Perde -2 pontos de vínculo ao ser assustado
-      // Som do buzzer removido a pedido do usuário
     }
   }
   else if (somMaxDev >= limiarBrincar) {
@@ -3525,16 +3684,19 @@ void loop() {
       tempoUltimaPalma = millis();
     }
     
-    if (!animacaoDance && !animacaoComendo && !animacaoBrincando && !animacaoCurando && !animacaoSusto && !animacaoIrritado) {
+    if (!animacaoDance && !animacaoComendo && !animacaoBrincando && !animacaoCurando && !animacaoSusto && !animacaoIrritado && (millis() - tempoUltimaReacaoSom > 6000)) {
+      tempoUltimaReacaoSom = millis();
       int limiarTriste = (personalidadeNatural == PERSONALIDADE_SENSIVEL) ? 50 : 30;
       if (personalidade == PERSONALIDADE_SARCASTICA || fome <= limiarTriste) {
-        Serial.println(F("Som intermediario detectado! Pet fica IRRITADO (Sarcástico ou com fome/triste)!"));
+        Serial.println(F("Som intermediario detectado! Pet fica IRRITADO!"));
         animacaoIrritado = true;
         tempoInicioIrritado = millis();
         mudarTelaPara(TELA_FACE);
       } else {
-        Serial.println(F("Som intermediario detectado! Brincando (Silencioso)!"));
-        brincarPet(false); 
+        Serial.println(F("Som intermediario detectado! Pet fica BRINCANDO!"));
+        animacaoBrincando = true;
+        tempoInicioReacao = millis();
+        mudarTelaPara(TELA_FACE);
       }
     }
   }
@@ -3644,7 +3806,7 @@ void loop() {
           ociosoLookX = 0;
           ociosoLookY = 0;
         }
-        tempoProximoOlharOcioso = random(2500, 6000);
+        tempoProximoOlharOcioso = random(6000, 15000);
       }
       tempoUltimoOlharOcioso = millis();
     }
@@ -4039,7 +4201,7 @@ void loop() {
     // Se a animação atual terminou, reseta tipo
     if (tipoReacaoOciosa != 0 && millis() > tempoFimReacaoOciosa) {
       tipoReacaoOciosa = 0;
-      tempoProximaReacaoOciosa = millis() + random(8000, 15000); // Aguarda de 8 a 15 segundos para a próxima
+      tempoProximaReacaoOciosa = millis() + random(25000, 45000); // Aguarda de 25 a 45 segundos para a próxima
     }
     
     // Se está na hora da próxima reação e não tem nenhuma rodando
@@ -4093,8 +4255,9 @@ void loop() {
       }
     }
   } else {
-    // Se saiu da tela principal ou entrou em animação de cuidado, cancela ócio
+    // Se saiu da tela principal ou entrou em animação de cuidado, cancela ócio e adia próxima reação
     tipoReacaoOciosa = 0;
+    tempoProximaReacaoOciosa = millis() + random(25000, 45000);
   }
 
   // Atualiza as partículas físicas do pet
@@ -4150,6 +4313,12 @@ void loop() {
       desenharTelas(0, telaAtual);
     }
   } while ( u8g2.nextPage() );
+
+  // Envia o estado via ESP-NOW a cada 200ms
+  if (millis() - ultimoEnvioEspNow >= 200) {
+    enviarEstadoPorEspNow();
+    ultimoEnvioEspNow = millis();
+  }
 
   // Ajustado o delay para manter as transições fluidas (~30 FPS)
   delay(35); 
