@@ -1860,8 +1860,8 @@ void loop() {
         drawEye(eyeLx, eyeLy, eyeLw, eyeLh, eyeRadius);
         drawEye(eyeRx, eyeRy, eyeRw, eyeRh, eyeRadius);
         
-        // Se for a personalidade Sarcástica e estiver acordado, desenha pálpebras caídas (Upper Eyelids)
-        if (personalidade == PERSONALIDADE_SARCASTICA && luzPorcento >= 10) {
+        // Se for a personalidade Sarcástica e estiver acordado, desenha pálpebras caídas (oculta no auge da piscada para fechar limpo)
+        if (personalidade == PERSONALIDADE_SARCASTICA && luzPorcento >= 10 && !estaPiscando) {
           u8g2.setDrawColor(0); // Desenha em preto para cortar a metade superior
           u8g2.drawBox((int)(eyeLx - eyeLw/2.0 - 2), (int)(eyeLy - eyeLh/2.0 - 1), (int)(eyeLw + 4), (int)(eyeLh * 0.45));
           u8g2.drawBox((int)(eyeRx - eyeRw/2.0 - 2), (int)(eyeRy - eyeRh/2.0 - 1), (int)(eyeRw + 4), (int)(eyeRh * 0.45));

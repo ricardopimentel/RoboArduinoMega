@@ -2855,8 +2855,8 @@ void desenharTelaFace(int xOffset) {
         u8g2.setDrawColor(1);
       }
       
-      // Sobrancelhas / pálpebras baseadas na personalidade e humor
-      if (personalidade == PERSONALIDADE_SARCASTICA || humorAtual == HUMOR_ENTEDIADO) {
+      // Sobrancelhas / pálpebras baseadas na personalidade e humor (oculta o corte no auge da piscada para fechar limpo)
+      if ((personalidade == PERSONALIDADE_SARCASTICA || humorAtual == HUMOR_ENTEDIADO) && !estaPiscando) {
         // Corta metade superior dos olhos para cara de tédio
         u8g2.setDrawColor(0);
         u8g2.drawBox((int)(eyeLx - eyeLw/2.0 - 2) + xOffset + tremorX, (int)(eyeLy - eyeLh/2.0 - 1) + tremorY, (int)(eyeLw + 4), (int)(eyeLh * 0.45));
