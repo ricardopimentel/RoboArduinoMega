@@ -4224,47 +4224,47 @@ void loop() {
       
       if (personalidade == PERSONALIDADE_SARCASTICA) {
         if (r < 33) {
-          tipoReacaoOciosa = 2; // Revirar olhos (2 segundos) [EXISTENTE]
-          tempoFimReacaoOciosa = millis() + 2000;
+          tipoReacaoOciosa = 2; // Revirar olhos (2 vezes seguidas: 4 segundos)
+          tempoFimReacaoOciosa = millis() + 4000;
         } else if (r < 66) {
-          tipoReacaoOciosa = 8; // Olhos >< e boca meia lua para baixo (2 segundos) [NOVA]
-          tempoFimReacaoOciosa = millis() + 2000;
+          tipoReacaoOciosa = 8; // Olhos >< e boca meia lua para baixo (2 vezes seguidas: 4 segundos)
+          tempoFimReacaoOciosa = millis() + 4000;
         } else {
-          tipoReacaoOciosa = 9; // Olhos - - e boca VVV (2 segundos) [NOVA]
-          tempoFimReacaoOciosa = millis() + 2000;
+          tipoReacaoOciosa = 9; // Olhos - - e boca VVV (2 vezes seguidas: 4 segundos)
+          tempoFimReacaoOciosa = millis() + 4000;
         }
       } 
       else if (personalidade == PERSONALIDADE_SENSIVEL) {
         if (temperatura < limiarTempBaixo - 1.0 && temperatura > 0) {
           // Se estiver frio, treme
-          tipoReacaoOciosa = 4; // Tremedeira (2.5 segundos) [EXISTENTE]
-          tempoFimReacaoOciosa = millis() + 2500;
+          tipoReacaoOciosa = 4; // Tremedeira (2 vezes seguidas: 5 segundos)
+          tempoFimReacaoOciosa = millis() + 5000;
         } else {
           if (r < 33) {
-            tipoReacaoOciosa = 12; // Olhos coração e boca meia lua para cima (2 segundos) [NOVA]
-            tempoFimReacaoOciosa = millis() + 2000;
+            tipoReacaoOciosa = 12; // Olhos coração e boca meia lua para cima (2 vezes seguidas: 4 segundos)
+            tempoFimReacaoOciosa = millis() + 4000;
           } else if (r < 66) {
-            tipoReacaoOciosa = 7; // Sorridente com corações subindo (2 segundos) [EXISTENTE]
-            tempoFimReacaoOciosa = millis() + 2000;
+            tipoReacaoOciosa = 7; // Sorridente com corações subindo (2 vezes seguidas: 4 segundos)
+            tempoFimReacaoOciosa = millis() + 4000;
           } else {
-            tipoReacaoOciosa = 14; // Mandando beijo (2 segundos) [NOVA]
-            tempoFimReacaoOciosa = millis() + 2000;
+            tipoReacaoOciosa = 14; // Mandando beijo (2 vezes seguidas: 4 segundos)
+            tempoFimReacaoOciosa = millis() + 4000;
           }
         }
       } 
       else { // PERSONALIDADE_BASICA (Normal)
         if (r < 33) {
-          tipoReacaoOciosa = 1; // Assobio (2.5 segundos) [EXISTENTE]
-          tempoFimReacaoOciosa = millis() + 2500;
+          tipoReacaoOciosa = 1; // Assobio (2 vezes seguidas: 5 segundos)
+          tempoFimReacaoOciosa = millis() + 5000;
           if (idadeDias >= 1) {
             playRTTTL(rtttl_mario);
           }
         } else if (r < 66) {
-          tipoReacaoOciosa = 10; // Piscadela (2 segundos) [NOVA]
-          tempoFimReacaoOciosa = millis() + 2000;
+          tipoReacaoOciosa = 10; // Piscadela (2 vezes seguidas: 4 segundos)
+          tempoFimReacaoOciosa = millis() + 4000;
         } else {
-          tipoReacaoOciosa = 11; // Olhos >< e boca meia lua para cima (2 segundos) [NOVA]
-          tempoFimReacaoOciosa = millis() + 2000;
+          tipoReacaoOciosa = 11; // Olhos >< e boca meia lua para cima (2 vezes seguidas: 4 segundos)
+          tempoFimReacaoOciosa = millis() + 4000;
         }
       }
     }
