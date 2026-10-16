@@ -1800,8 +1800,19 @@ void handleRoot() {
 
 
   html += F("  <div class='config-group'>");
-  html += F("    <label>Testador de Expressões / Carinhas (4 Segundos)</label>");
-  html += F("    <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px;'>");
+  html += F("    <label>Testador de Expressões / Carinhas (Execução 2x Seguidas)</label>");
+  html += F("    <div style='margin-top: 6px; font-size: 0.8em; color: #bb86fc; font-weight: bold;'>— Personalidade Sarcástica —</div>");
+  html += F("    <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 6px;'>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('sarcastica_padrao')\">Padrão Sarcástica 😏</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('revirar_olhos')\">1. Revirar Olhos 🙄</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('bocejo')\">2. Tédio Bocejo 🥱</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #004d40; border: 2px solid #00e5ff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('gota_grande')\">3. Gota Grande 💧</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('julgamento')\">4. Julgamento 😒</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('risada_maliciosa')\">5. Risada Deboche 😈</button>");
+  html += F("      <button class='btn-save' style='padding: 8px; background: #3c1e5a; border: 1px solid #7c4dff; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('sono_sarcastico')\">6. ZZz Sarcástico 💤</button>");
+  html += F("    </div>");
+  html += F("    <div style='margin-top: 10px; font-size: 0.8em; color: #aaa;'>— Outras Expressões —</div>");
+  html += F("    <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 6px;'>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('normal')\">Normal 🙂</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('irritado')\">Bravo 😠</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('susto')\">Surpreso 😮</button>");
@@ -1813,7 +1824,6 @@ void handleRoot() {
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('tonto')\">Tonto 😵</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('coracao')\">Corações 😍</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('><_baixo')\">&gt;&lt; Triste ☹️</button>");
-  html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('--_vvv')\">- - Bravo 😤</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('piscadela')\">Piscadela 😉</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('beijo')\">Beijo 😘</button>");
   html += F("      <button class='btn-save' style='padding: 8px; background: #2a2a2a; border: 1px solid #444; color:#fff; border-radius:6px; cursor:pointer; font-weight:bold;' onclick=\"triggerFace('choro')\">Chorando 😭</button>");
@@ -2055,13 +2065,42 @@ void handleTriggerFace() {
       tipoReacaoOciosa = 12;
       tempoFimReacaoOciosa = millis() + 4000;
     }
-    else if (face == "><_baixo") {
-      tipoReacaoOciosa = 8;
-      tempoFimReacaoOciosa = millis() + 4000;
+    else if (face == "sarcastica_padrao") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      personalidadeNatural = PERSONALIDADE_SARCASTICA;
+      humorAtual = HUMOR_ENTEDIADO;
+      tipoReacaoOciosa = 0;
+      tempoFimTesteFace = millis() + 4000;
     }
-    else if (face == "--_vvv") {
+    else if (face == "revirar_olhos") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      tipoReacaoOciosa = 7;
+      tempoFimReacaoOciosa = millis() + 5200;
+    }
+    else if (face == "bocejo" || face == "><_baixo") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      tipoReacaoOciosa = 8;
+      tempoFimReacaoOciosa = millis() + 6000;
+    }
+    else if (face == "gota_grande" || face == "--_vvv") {
+      personalidade = PERSONALIDADE_SARCASTICA;
       tipoReacaoOciosa = 9;
-      tempoFimReacaoOciosa = millis() + 4000;
+      tempoFimReacaoOciosa = millis() + 5600;
+    }
+    else if (face == "julgamento") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      tipoReacaoOciosa = 21;
+      tempoFimReacaoOciosa = millis() + 6800;
+    }
+    else if (face == "risada_maliciosa") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      tipoReacaoOciosa = 22;
+      tempoFimReacaoOciosa = millis() + 5600;
+    }
+    else if (face == "sono_sarcastico") {
+      personalidade = PERSONALIDADE_SARCASTICA;
+      tipoReacaoOciosa = 23;
+      tempoFimReacaoOciosa = millis() + 7600;
     }
     else if (face == "piscadela") {
       tipoReacaoOciosa = 10;
@@ -2754,13 +2793,53 @@ void desenharTelaFace(int xOffset) {
     }
     
     // 1. DESENHO DOS OLHOS
-    if (tipoReacaoOciosa == 6 || tipoReacaoOciosa == 9) { // Bocejo ou Olhos - - (Sarcástica)
-      int shiftY = 0;
-      if (tipoReacaoOciosa == 9) {
-        shiftY = random(-1, 2); // Jitter vertical de raiva
-      }
-      u8g2.drawLine((int)eyeLx - 8 + xOffset + tremorX, (int)eyeLy + tremorY + shiftY, (int)eyeLx + 8 + xOffset + tremorX, (int)eyeLy + tremorY + shiftY);
-      u8g2.drawLine((int)eyeRx - 8 + xOffset + tremorX, (int)eyeRy + tremorY + shiftY, (int)eyeRx + 8 + xOffset + tremorX, (int)eyeRy + tremorY + shiftY);
+    if (tipoReacaoOciosa == 6) { // Bocejo
+      u8g2.drawLine((int)eyeLx - 8 + xOffset + tremorX, (int)eyeLy + tremorY, (int)eyeLx + 8 + xOffset + tremorX, (int)eyeLy + tremorY);
+      u8g2.drawLine((int)eyeRx - 8 + xOffset + tremorX, (int)eyeRy + tremorY, (int)eyeRx + 8 + xOffset + tremorX, (int)eyeRy + tremorY);
+    }
+    else if (tipoReacaoOciosa == 9) { // 3. Gota Grande na Cabeça (Idle 3) com Pupilas e Gota Anime
+      int shiftY = (int)(sin(millis() * 0.005) * 1.5);
+      int lx = (int)eyeLx + xOffset + tremorX;
+      int rx = (int)eyeRx + xOffset + tremorX;
+      int cy = (int)eyeLy + tremorY + shiftY;
+
+      // Olhos semicerrados sarcásticos com PUPILAS pretas e reflexo branco
+      u8g2.drawRBox(lx - 8, cy - 5, 16, 11, 2);
+      u8g2.drawRBox(rx - 8, cy - 5, 16, 11, 2);
+
+      // Pupila preta recortada por dentro olhando de soslaio (-2px)
+      u8g2.setDrawColor(0);
+      u8g2.drawBox(lx - 6, cy - 4, 7, 9);
+      u8g2.drawBox(rx - 6, cy - 4, 7, 9);
+      u8g2.setDrawColor(1);
+      // Ponto de brilho especular branco
+      u8g2.drawPixel(lx - 4, cy - 2);
+      u8g2.drawPixel(rx - 4, cy - 2);
+
+      // Pálpebra superior reta
+      u8g2.drawLine(lx - 9, cy - 5, lx + 9, cy - 5);
+      u8g2.drawLine(rx - 9, cy - 5, rx + 9, cy - 5);
+
+      // Sobrancelhas Sarcásticas:
+      // Esquerda: Arqueada (⌒)
+      u8g2.drawLine(lx - 9, cy - 9, lx, cy - 13);
+      u8g2.drawLine(lx, cy - 13, lx + 8, cy - 9);
+      // Direita: Reta com ponta erguida (───╯)
+      u8g2.drawLine(rx - 8, cy - 10, rx + 3, cy - 10);
+      u8g2.drawLine(rx + 3, cy - 10, rx + 9, cy - 14);
+
+      // GOTA GRANDE ANIME NO TOPO DIREITO DA CABEÇA (x=102, y escorrendo)
+      unsigned long dropElapsed = (millis() % 2800);
+      float dp = (float)dropElapsed / 2800.0f;
+      int dropSlide = (int)(dp * 10);
+      int gx = 102 + xOffset;
+      int gy = 6 + dropSlide;
+      u8g2.drawDisc(gx, gy + 4, 4);
+      u8g2.drawLine(gx, gy - 2, gx - 4, gy + 4);
+      u8g2.drawLine(gx, gy - 2, gx + 4, gy + 4);
+      u8g2.setDrawColor(0);
+      u8g2.drawPixel(gx - 1, gy + 3);
+      u8g2.setDrawColor(1);
     }
     else if (tipoReacaoOciosa == 5 || tipoReacaoOciosa == 8 || tipoReacaoOciosa == 11) { // Espirro ou Olhos >< (Sarcástica/Normal)
       if (personalidade == PERSONALIDADE_SARCASTICA && idadeDias >= 7 && tipoReacaoOciosa == 8) {
@@ -2875,8 +2954,8 @@ void desenharTelaFace(int xOffset) {
         u8g2.drawLine((int)eyeRx + 3 + xOffset + tremorX, (int)eyeRy - 11 + tremorY, (int)eyeRx + 9 + xOffset + tremorX, (int)eyeRy - 15 + tremorY);
       }
       
-      // Sobrancelhas de bravo / triste baseadas no humor
-      if (humorAtual == HUMOR_CARENTE || humorAtual == HUMOR_DOENTE) {
+      // Sobrancelhas de bravo / triste baseadas no humor (apenas se NÃO for personalidade sarcástica)
+      if (personalidade != PERSONALIDADE_SARCASTICA && (humorAtual == HUMOR_CARENTE || humorAtual == HUMOR_DOENTE)) {
         // Sobrancelhas tristes (\ /)
         u8g2.drawLine((int)eyeLx - 8 + xOffset + tremorX, (int)eyeLy - 10 + tremorY, (int)eyeLx + 8 + xOffset + tremorX, (int)eyeLy - 14 + tremorY);
         u8g2.drawLine((int)eyeRx - 8 + xOffset + tremorX, (int)eyeRy - 14 + tremorY, (int)eyeRx + 8 + xOffset + tremorX, (int)eyeRy - 10 + tremorY);
@@ -2911,15 +2990,9 @@ void desenharTelaFace(int xOffset) {
       u8g2.drawBox(cx - 6, cy, 12, 4); // Corta a parte de baixo (y >= cy) para fazer domo (curvado para baixo)
       u8g2.setDrawColor(1);
     }
-    else if (tipoReacaoOciosa == 9) { // Boca VVV (Sarcástica) que treme de irritação
-      int rx = cx + random(-1, 2);
-      int ry = cy + random(-1, 2);
-      u8g2.drawLine(rx - 6, ry - 2, rx - 4, ry + 2);
-      u8g2.drawLine(rx - 4, ry + 2, rx - 2, ry - 2);
-      u8g2.drawLine(rx - 2, ry - 2, rx, ry + 2);
-      u8g2.drawLine(rx, ry + 2, rx + 2, ry - 2);
-      u8g2.drawLine(rx + 2, ry - 2, rx + 4, ry + 2);
-      u8g2.drawLine(rx + 4, ry + 2, rx + 6, ry - 2);
+    else if (tipoReacaoOciosa == 9) { // 3. Gota Grande: Boca curvada para baixo (︵) de desdém/suspiro
+      u8g2.drawLine(cx - 6, cy + 3, cx, cy - 2);
+      u8g2.drawLine(cx, cy - 2, cx + 6, cy + 3);
     }
     else if (tipoReacaoOciosa == 11 || tipoReacaoOciosa == 12) { // Boca meia lua preenchida para cima (Normal/Sensível)
       u8g2.drawFilledEllipse(cx, cy, 5, 4);
@@ -2933,14 +3006,13 @@ void desenharTelaFace(int xOffset) {
       u8g2.drawLine(cx, cy + mouthOpenY, cx + 4, cy);
     }
     else {
-      // Boca baseada no humor do pet
-      if (humorAtual == HUMOR_DOENTE || humorAtual == HUMOR_CARENTE) {
-        // Boca triste curvinha
-        u8g2.drawLine((int)(58 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY), (int)(61 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
-        u8g2.drawLine((int)(61 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(67 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
-        u8g2.drawLine((int)(67 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(70 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY));
+      // Boca baseada no humor e personalidade
+      if (personalidade == PERSONALIDADE_SARCASTICA) {
+        // Boca curvada para baixo (︵) padrão da personalidade sarcástica
+        u8g2.drawLine((int)(58 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY), (int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
+        u8g2.drawLine((int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(70 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY));
       }
-      else if (personalidade == PERSONALIDADE_SARCASTICA) {
+      else if (humorAtual == HUMOR_DOENTE || humorAtual == HUMOR_CARENTE) {
         // Boca curvada para baixo (︵) padrão da personalidade sarcástica
         u8g2.drawLine((int)(58 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY), (int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
         u8g2.drawLine((int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(70 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY));
