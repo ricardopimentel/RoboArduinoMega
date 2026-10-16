@@ -2864,6 +2864,15 @@ void desenharTelaFace(int xOffset) {
         u8g2.setDrawColor(1);
         u8g2.drawLine((int)(eyeLx - eyeLw/2.0 - 1) + xOffset + tremorX, (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45) + tremorY, (int)(eyeLx + eyeLw/2.0 + 1) + xOffset + tremorX, (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45) + tremorY);
         u8g2.drawLine((int)(eyeRx - eyeRw/2.0 - 1) + xOffset + tremorX, (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45) + tremorY, (int)(eyeRx + eyeRw/2.0 + 1) + xOffset + tremorX, (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45) + tremorY);
+
+        // Novas Sobrancelhas Sarcásticas Padrão:
+        // Esquerda: Arqueada suavemente (⌒)
+        u8g2.drawLine((int)eyeLx - 9 + xOffset + tremorX, (int)eyeLy - 10 + tremorY, (int)eyeLx + xOffset + tremorX, (int)eyeLy - 14 + tremorY);
+        u8g2.drawLine((int)eyeLx + xOffset + tremorX, (int)eyeLy - 14 + tremorY, (int)eyeLx + 8 + xOffset + tremorX, (int)eyeLy - 10 + tremorY);
+        
+        // Direita: Reta com ponta erguida no canto externo (───╯)
+        u8g2.drawLine((int)eyeRx - 8 + xOffset + tremorX, (int)eyeRy - 11 + tremorY, (int)eyeRx + 3 + xOffset + tremorX, (int)eyeRy - 11 + tremorY);
+        u8g2.drawLine((int)eyeRx + 3 + xOffset + tremorX, (int)eyeRy - 11 + tremorY, (int)eyeRx + 9 + xOffset + tremorX, (int)eyeRy - 15 + tremorY);
       }
       
       // Sobrancelhas de bravo / triste baseadas no humor
@@ -2930,6 +2939,11 @@ void desenharTelaFace(int xOffset) {
         u8g2.drawLine((int)(58 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY), (int)(61 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
         u8g2.drawLine((int)(61 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(67 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
         u8g2.drawLine((int)(67 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(70 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY));
+      }
+      else if (personalidade == PERSONALIDADE_SARCASTICA) {
+        // Boca curvada para baixo (︵) padrão da personalidade sarcástica
+        u8g2.drawLine((int)(58 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY), (int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY));
+        u8g2.drawLine((int)(64 + mouthShiftX + xOffset + tremorX), (int)(48 + offsetMouthY + mouthShiftY + tremorY), (int)(70 + mouthShiftX + xOffset + tremorX), (int)(51 + offsetMouthY + mouthShiftY + tremorY));
       }
       else if (humorAtual == HUMOR_ENTEDIADO) {
         // Boca de desânimo linear

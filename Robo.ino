@@ -1870,6 +1870,15 @@ void loop() {
           // Desenha a dobra/vinco da pálpebra logo no corte
           u8g2.drawLine((int)(eyeLx - eyeLw/2.0 - 1), (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45), (int)(eyeLx + eyeLw/2.0 + 1), (int)(eyeLy - eyeLh/2.0 + eyeLh * 0.45));
           u8g2.drawLine((int)(eyeRx - eyeRw/2.0 - 1), (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45), (int)(eyeRx + eyeRw/2.0 + 1), (int)(eyeRy - eyeRh/2.0 + eyeRh * 0.45));
+
+          // Novas Sobrancelhas Sarcásticas Padrão:
+          // Esquerda: Arqueada suavemente (⌒)
+          u8g2.drawLine((int)eyeLx - 9, (int)eyeLy - 10, (int)eyeLx, (int)eyeLy - 14);
+          u8g2.drawLine((int)eyeLx, (int)eyeLy - 14, (int)eyeLx + 8, (int)eyeLy - 10);
+          
+          // Direita: Reta com ponta erguida no canto externo (───╯)
+          u8g2.drawLine((int)eyeRx - 8, (int)eyeRy - 11, (int)eyeRx + 3, (int)eyeRy - 11);
+          u8g2.drawLine((int)eyeRx + 3, (int)eyeRy - 11, (int)eyeRx + 9, (int)eyeRy - 15);
         }
         
         // Expressões de Bravo e Triste baseadas nos atributos e na personalidade
@@ -1903,9 +1912,9 @@ void loop() {
           int offsetMouthY = (int)(sin(millis() * 0.0025) * 0.5); // respiração super sutil
           
           if (personalidade == PERSONALIDADE_SARCASTICA) {
-            // Boca ociosa sarcástica (tédio): linha torta/assimétrica
-            u8g2.drawLine(58, 48 + offsetMouthY, 64, 49 + offsetMouthY);
-            u8g2.drawLine(64, 49 + offsetMouthY, 70, 51 + offsetMouthY);
+            // Boca curvada para baixo (︵) padrão da personalidade sarcástica
+            u8g2.drawLine(58, 51 + offsetMouthY, 64, 48 + offsetMouthY);
+            u8g2.drawLine(64, 48 + offsetMouthY, 70, 51 + offsetMouthY);
           } else {
             // Boca fofa de gatinho (w) centralizada em X=64
             u8g2.drawLine(60, 48 + offsetMouthY, 62, 50 + offsetMouthY);
